@@ -534,6 +534,8 @@
             '../../src/spaces-inl.h',
             '../../src/spaces.cc',
             '../../src/spaces.h',
+            '../../src/stm.cc',
+            '../../src/stm.h',
             '../../src/string-search.cc',
             '../../src/string-search.h',
             '../../src/string-stream.cc',
