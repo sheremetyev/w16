@@ -3683,7 +3683,6 @@ void SharedFunctionInfo::set_code(Code* value, WriteBarrierMode mode) {
   Code* lazy_code = Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile);
   bool old_is_lazy = lazy_code == reinterpret_cast<Code*>(
       READ_INTPTR_FIELD(this, kCodeOffset + core * kPointerSize));
-  bool new_is_lazy = lazy_code == value;
   
   WRITE_INTPTR_FIELD(this, kCodeOffset +
       core * kPointerSize, reinterpret_cast<intptr_t>(value));
@@ -3823,7 +3822,6 @@ void JSFunction::set_code(Code* value) {
   Address lazy_code_entry = lazy_code->entry();
   bool old_is_lazy = lazy_code_entry == reinterpret_cast<Address>(
       READ_INTPTR_FIELD(this, kCodeEntryOffset + core * kPointerSize));
-  bool new_is_lazy = lazy_code == value;
   
   Address entry = value->entry();
   WRITE_INTPTR_FIELD(this, kCodeEntryOffset +
