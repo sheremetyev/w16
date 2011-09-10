@@ -21,9 +21,9 @@ class Transaction {
 
 public:
   Transaction(Isolate* isolate) :
-      aborted_(false),
-      isolate_(isolate),
-      mutex_(OS::CreateMutex()) {
+    aborted_(false),
+    isolate_(isolate),
+    mutex_(OS::CreateMutex()) {
   }
 
   JSObject* RedirectRead(JSObject* obj) {
@@ -126,9 +126,9 @@ public:
 private:
   volatile bool aborted_;
   Isolate* isolate_;
-  ObjectSet read_set_;
-  ObjectMap write_set_;
-  ObjectSet copy_set_; // temporary copies we created
+  ObjectSet read_set_;   // objects read by this transaction
+  ObjectMap write_set_;  // objects written by this transaction
+  ObjectSet copy_set_;   // temporary copies we have created
   Mutex* mutex_;
 };
 
@@ -155,7 +155,8 @@ bool STM::CommitTransaction(Transaction* trans) {
 
   bool comitted = false;
 
-  // if the transaction was aborted then clear exceptions and return false
+  // if the transaction was aborted then clear exceptions flag
+  // so that it is not transferred to next attempt
   if (trans->IsAborted()) {
     trans->ClearExceptions();
   } else {
@@ -164,7 +165,8 @@ bool STM::CommitTransaction(Transaction* trans) {
       transactions_[i]->Lock();
     }
 
-    // intersect write set with other transactions and abort those in conflict
+    // intersect write set with other transactions
+    // abort those in conflict
     for (int i = 0; i < transactions_.length(); i++) {
       Transaction* t = transactions_[i];
       if (t == trans) {

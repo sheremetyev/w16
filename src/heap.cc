@@ -84,10 +84,10 @@ Heap::Heap()
       max_executable_size_(256*MB),
       code_range_size_(512*MB),
 #else
-      reserved_semispace_size_(32*MB),
-      max_semispace_size_(32*MB),
-      initial_semispace_size_(32*MB),
-      max_old_generation_size_(512*MB),
+      reserved_semispace_size_(128*MB),
+      max_semispace_size_(128*MB),
+      initial_semispace_size_(128*MB),
+      max_old_generation_size_(32*MB),
       max_executable_size_(128*MB),
       code_range_size_(0),
 #endif
@@ -2768,6 +2768,8 @@ MaybeObject* Heap::CreateCode(const CodeDesc& desc,
                               Code::Flags flags,
                               Handle<Object> self_reference,
                               bool immovable) {
+  HeapLock heap_lock;
+
   // Allocate ByteArray before the Code object, so that we do not risk
   // leaving uninitialized Code object (and breaking the heap).
   Object* reloc_info;

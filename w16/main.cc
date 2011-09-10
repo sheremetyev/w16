@@ -1,5 +1,5 @@
-// v8 includes
-#include <v8.h> // we include internal header which includes public one
+// we include internal header which includes the public one
+#include <v8.h>
 
 // standard library
 #include <queue>
@@ -8,15 +8,15 @@
 
 using namespace v8;
 
-v8::internal::Thread::LocalStorageKey thread_name_key = 
-    v8::internal::Thread::CreateThreadLocalKey();;
+v8::internal::Thread::LocalStorageKey thread_name_key =
+  v8::internal::Thread::CreateThreadLocalKey();;
 
-// Reads a file into a v8 string.
+// reads a file into a v8 string.
 Handle<String> ReadFile(const char* filename) {
   std::ifstream in(filename, std::ios_base::in);
   std::string str;
   str.assign(std::istreambuf_iterator<char>(in),
-      std::istreambuf_iterator<char>());
+    std::istreambuf_iterator<char>());
 
   return String::New(str.c_str());
 }
@@ -24,190 +24,201 @@ Handle<String> ReadFile(const char* filename) {
 // JavaScript function print(value,...)
 Handle<Value> Print(const Arguments& args)
 {
-    static v8::internal::Mutex* print_mutex = v8::internal::OS::CreateMutex();
-    v8::internal::ScopedLock print_lock(print_mutex);
+  static v8::internal::Mutex* print_mutex =
+    v8::internal::OS::CreateMutex();
+  v8::internal::ScopedLock print_lock(print_mutex);
 
-    char* thread_name = reinterpret_cast<char*>(
-        v8::internal::Thread::GetExistingThreadLocal(thread_name_key));
-    HandleScope handle_scope;
-    for (int i = 0; i < args.Length(); i++) {
-        if (i > 0) { printf(" "); }
-        String::Utf8Value str(args[i]);
-        printf("[%s] %s", thread_name, static_cast<const char*>(*str));
-    }
-    printf("\n");
-    fflush(stdout);
-    return Undefined();
+  char* thread_name = reinterpret_cast<char*>(
+    v8::internal::Thread::GetExistingThreadLocal(thread_name_key));
+  HandleScope handle_scope;
+  for (int i = 0; i < args.Length(); i++) {
+    if (i > 0) { printf(" "); }
+    String::Utf8Value str(args[i]);
+    printf("[%s] %s", thread_name, static_cast<const char*>(*str));
+  }
+  printf("\n");
+  fflush(stdout);
+  return Undefined();
 }
 
-// Each event incapsulates a JavaScript closure
+// each event incapsulates a JavaScript closure
 struct Event {
-    Persistent<Function> Func;
+  Persistent<Function> Func;
 
-    Event(Handle<Function> func) {
-        Func = Persistent<Function>::New(func);
-    }
+  Event(Handle<Function> func) {
+    Func = Persistent<Function>::New(func);
+  }
 
-    void Execute() {
-        Func->Call(Func, 0, NULL);
-    }
+  void Execute() {
+    Func->Call(Func, 0, NULL);
+  }
 
-    ~Event() {
-        Func.Dispose();
-    }
+  ~Event() {
+    Func.Dispose();
+  }
 };
 
-// Event queue
-std::queue<Event*> events;
-int running_threads = 0;
+std::queue<Event*> event_queue;
+v8::internal::Atomic32 running_threads = 0;
+v8::internal::Atomic32 aborted_transactions = 0;
 v8::internal::Mutex* mutex = v8::internal::OS::CreateMutex();
 
-// JavaScript function enqueue(function())
-Handle<Value> Enqueue(const Arguments& args) {
-    v8::internal::ScopedLock mutex_lock(mutex);
+// JavaScript function async(function())
+Handle<Value> Async(const Arguments& args) {
+  v8::internal::ScopedLock mutex_lock(mutex);
 
-    HandleScope handle_scope;
-    Handle<Function> func = Handle<Function>::Cast(args[0]);
-    
-    Event* e = new Event(func);
-    events.push(e);
-    
-    return Undefined();
+  HandleScope handle_scope;
+  Handle<Function> func = Handle<Function>::Cast(args[0]);
+
+  Event* e = new Event(func);
+  event_queue.push(e);
+
+  return Undefined();
 }
 
 class WorkerThread : public v8::internal::Thread {
-    Persistent<Context> context_;
+  Persistent<Context> context_;
 public:
-    WorkerThread(const char* name, Handle<Context> context) : 
-      v8::internal::Thread(reinterpret_cast<v8::internal::Isolate*>(
-          Isolate::GetCurrent()), name) {
-        context_ = Persistent<Context>::New(context);
-    }
+  WorkerThread(const char* name, Handle<Context> context) : 
+    v8::internal::Thread(reinterpret_cast<v8::internal::Isolate*>(
+      Isolate::GetCurrent()), name) {
+    context_ = Persistent<Context>::New(context);
+  }
 
-    virtual void Run() {
-        SetThreadLocal(thread_name_key, const_cast<char*>(name()));
+  virtual void Run() {
+    SetThreadLocal(thread_name_key, const_cast<char*>(name()));
 
-        Isolate::Scope isolate_scope(reinterpret_cast<Isolate*>(isolate()));
+    // enter isolate
+    Isolate::Scope isolate_scope(
+      reinterpret_cast<Isolate*>(isolate()));
 
-        // Create a new context and enter it
-        Context::Scope cscope(context_);
+    // enter context
+    Context::Scope context_scope(context_);
 
-        bool active = true;
-        {
-            v8::internal::ScopedLock mutex_lock(mutex);
-            running_threads++;
+    bool active = true;
+    v8::internal::Barrier_AtomicIncrement(&running_threads, 1);
+
+    // loop until queue is empty and others are idle too
+    while (true) {
+      Event* e = NULL;
+      {
+        v8::internal::ScopedLock mutex_lock(mutex);
+
+        if (active) {
+          // count me out
+          running_threads--;
+          active = false;
         }
 
-        // Loop until queue is empty and others are idle too
+        if (!event_queue.empty()) {
+          e = event_queue.front();
+          event_queue.pop();
+          // count me back in
+          running_threads++;
+          active = true;
+        } else {
+          if (running_threads == 0) {
+            // we are done
+            break;
+          }
+        }
+      }
+
+      if (e != NULL) {
+        // restart transaction until it is successfully committed
+        v8::internal::Transaction* transaction = NULL;
         while (true) {
-            Event* e = NULL;
-            {
-                v8::internal::ScopedLock mutex_lock(mutex);
+          transaction = isolate()->stm()->StartTransaction();
 
-                if (active) {
-                    // count me out
-                    running_threads--;
-                    active = false;
-                }
+          HandleScope handle_scope;
+          e->Execute();
 
-                if (!events.empty()) {
-                    e = events.front();
-                    events.pop();
-                    // count me back in
-                    running_threads++;
-                    active = true;
-                } else {
-                    if (running_threads == 0) {
-                        // we are done
-                        break;
-                    }
-                }
-            }
-
-            if (e != NULL) {
-                // repeat attempts until success
-                v8::internal::Transaction* transaction = NULL;
-                while (true) {
-                    transaction = isolate()->stm()->StartTransaction();
-                    
-                    HandleScope handle_scope;
-                    e->Execute();
-                    
-                    if (isolate()->stm()->CommitTransaction(transaction)) {
-                        // printf("[%s] Comitted.\n", name());
-                        break;
-                    } else {
-                        // printf("[%s] Aborted.\n", name());
-                    }
-                }
-                delete e;
-            }
+          if (isolate()->stm()->CommitTransaction(transaction)) {
+            // printf("[%s] Comitted.\n", name());
+            break;
+          } else {
+            // printf("[%s] Aborted.\n", name());
+            v8::internal::Barrier_AtomicIncrement(
+              &aborted_transactions, 1);
+          }
         }
+        delete e;
+      }
     }
+  }
 };
 
-int main(int argc, char **argv)
-{
-    if (argc <= 1) {
-        printf("Usage: w16 script.js\n");
-        return 1;
-    }
-    char* filename = argv[1];
+int main(int argc, char **argv) {
+  if (argc <= 3) {
+    printf("Usage: w16 <threads> <script.js> <batch> <V8 flags>\n");
+    return 1;
+  }
+  int threads = atoi(argv[1]);
+  char* filename = argv[2];
+  int batch = atoi(argv[3]);
 
-    // Disable optimizing profiler to get rid of an extra thread
-    char flags[1024] = { 0 };
-    strcat(flags, " --noopt");
-    strcat(flags, " --always_full_compiler");
-    strcat(flags, " --nocrankshaft");
-    strcat(flags, " --debug_code");
-    strcat(flags, " --nocompilation_cache");
-    strcat(flags, " --nouse_ic");
-    V8::SetFlagsFromString(flags, strlen(flags));
-    int argcc = argc - 1;
-    V8::SetFlagsFromCommandLine(&argcc, argv+1, false);
+  const int MAX_THREADS = v8::internal::CoreId::kMaxCores - 1;
+  if (threads < 1 || threads > MAX_THREADS) {
+    printf("Thread number should be between 1 and %d\n", MAX_THREADS);
+    return 1;
+  }
 
-    V8::Initialize();
+  // disable V8 optimisations
+  char flags[1024] = { 0 };
+  strcat(flags, " --noopt");
+  strcat(flags, " --always_full_compiler");
+  strcat(flags, " --nocrankshaft");
+  strcat(flags, " --debug_code");
+  strcat(flags, " --nocompilation_cache");
+  strcat(flags, " --nouse_ic");
+  V8::SetFlagsFromString(flags, strlen(flags));
+  int argcc = argc - 3;
+  V8::SetFlagsFromCommandLine(&argcc, argv + 3, false);
 
-    // Create a stack-allocated handle scope
-    HandleScope handle_scope;
+  V8::Initialize();
 
-    // Create a template for the global object and set built-in functions
-    Handle<ObjectTemplate> global = ObjectTemplate::New();
-    global->Set(String::New("enqueue"), FunctionTemplate::New(Enqueue));
-    global->Set(String::New("print"), FunctionTemplate::New(Print));
+  // create a stack-allocated handle scope
+  HandleScope handle_scope;
 
-    // Create a new context and enter it
-    Persistent<Context> context = Context::New(NULL, global);
+  Handle<Integer> batch_param(Integer::New(batch));
 
-    // Enter the context for compiling and running the script
-    Context::Scope cscope(context);
+  // create a template for the global object and set built-ins
+  Handle<ObjectTemplate> global = ObjectTemplate::New();
+  global->Set(String::New("async"), FunctionTemplate::New(Async));
+  global->Set(String::New("print"), FunctionTemplate::New(Print));
+  global->Set(String::New("BATCH_PARAM"), batch_param);
 
-    // Load and run the script
-    Script::New(ReadFile(filename), String::New(filename))->Run();
+  // create a new context
+  Persistent<Context> context = Context::New(NULL, global);
 
-    int64_t start_time = v8::internal::OS::Ticks();
+  // enter the context for compiling and running the script
+  Context::Scope context_scope(context);
 
-    // Run event loops in worker threads
-    const int THREADS_COUNT = 1;
-    WorkerThread* thread[THREADS_COUNT];
-    for (int i = 0; i < THREADS_COUNT; i++) {
-        char name[100];
-        sprintf(name, "Worker %d", i);
-        thread[i] = new WorkerThread(name, context);
-        thread[i]->Start();
-    }
+  // load and run the script
+  Script::New(ReadFile(filename), String::New(filename))->Run();
 
-    // We stop when all threads are idle and the event queue is empty
-    for (int i = 0; i < THREADS_COUNT; i++) {
-        thread[i]->Join();
-    }
+  int64_t start_time = v8::internal::OS::Ticks();
 
-    int64_t stop_time = v8::internal::OS::Ticks();
-    int milliseconds = static_cast<int>(stop_time - start_time) / 1000;
-    printf("%d milliseconds elapsed.\n", milliseconds);
+  // run event loops in worker threads
+  WorkerThread* thread[MAX_THREADS];
+  for (int i = 0; i < threads; i++) {
+    char name[100];
+    sprintf(name, "Worker %d", i);
+    thread[i] = new WorkerThread(name, context);
+    thread[i]->Start();
+  }
 
-    // Dispose the persistent context
-    context.Dispose();
+  // stop when all threads are idle and the event queue is empty
+  for (int i = 0; i < threads; i++) {
+    thread[i]->Join();
+  }
 
-    return 0;
+  int64_t stop_time = v8::internal::OS::Ticks();
+  int milliseconds = static_cast<int>(stop_time - start_time) / 1000;
+  printf("%d, %d, %d, %d\n", threads, batch, milliseconds, aborted_transactions);
+
+  // dispose the persistent context
+  context.Dispose();
+
+  return 0;
 }
