@@ -905,7 +905,7 @@ MaybeObject* Object::GetElement(uint32_t index) {
   // GetElement can trigger a getter which can cause allocation.
   // This was not always the case. This ASSERT is here to catch
   // leftover incorrect uses.
-  ASSERT(HEAP->IsAllocationAllowed());
+  // TODO(mininode): ASSERT(HEAP->IsAllocationAllowed());
   return GetElementWithReceiver(this, index);
 }
 
@@ -3104,11 +3104,13 @@ Code::Flags Code::ComputeFlags(Kind kind,
          (kind == STORE_IC) ||
          (kind == KEYED_STORE_IC));
   // Compute the bit mask.
+  int core = CoreId::CurrentInt();
   int bits = kind << kFlagsKindShift;
   if (in_loop) bits |= kFlagsICInLoopMask;
   bits |= ic_state << kFlagsICStateShift;
   bits |= type << kFlagsTypeShift;
   bits |= extra_ic_state << kFlagsExtraICStateShift;
+  bits |= core << kFlagsCoreIdShift;
   bits |= argc << kFlagsArgumentsCountShift;
   if (holder == PROTOTYPE_MAP) bits |= kFlagsCacheInPrototypeMapMask;
   // Cast to flags and validate result before returning it.
@@ -3118,6 +3120,7 @@ Code::Flags Code::ComputeFlags(Kind kind,
   ASSERT(ExtractICInLoopFromFlags(result) == in_loop);
   ASSERT(ExtractTypeFromFlags(result) == type);
   ASSERT(ExtractExtraICStateFromFlags(result) == extra_ic_state);
+  ASSERT(ExtractCoreIdFromFlags(result) == core);
   ASSERT(ExtractArgumentsCountFromFlags(result) == argc);
   return result;
 }
@@ -3168,6 +3171,9 @@ int Code::ExtractArgumentsCountFromFlags(Flags flags) {
   return (flags & kFlagsArgumentsCountMask) >> kFlagsArgumentsCountShift;
 }
 
+int Code::ExtractCoreIdFromFlags(Flags flags) {
+  return (flags & kFlagsCoreIdMask) >> kFlagsCoreIdShift;
+}
 
 InlineCacheHolderFlag Code::ExtractCacheHolderFromFlags(Flags flags) {
   int bits = (flags & kFlagsCacheInPrototypeMapMask);
@@ -3659,18 +3665,46 @@ void SharedFunctionInfo::set_start_position(int start_position) {
 
 
 Code* SharedFunctionInfo::code() {
-  return Code::cast(READ_FIELD(this, kCodeOffset));
+  int core = CoreId::Current().ToInteger();
+  return Code::cast(READ_FIELD(this, kCodeOffset + core * kPointerSize));
 }
 
 
 Code* SharedFunctionInfo::unchecked_code() {
-  return reinterpret_cast<Code*>(READ_FIELD(this, kCodeOffset));
+  int core = CoreId::Current().ToInteger();
+  return reinterpret_cast<Code*>(READ_FIELD(this, kCodeOffset +
+      core * kPointerSize));
 }
 
 
 void SharedFunctionInfo::set_code(Code* value, WriteBarrierMode mode) {
-  WRITE_FIELD(this, kCodeOffset, value);
   ASSERT(!Isolate::Current()->heap()->InNewSpace(value));
+  int core = CoreId::Current().ToInteger();
+  Code* lazy_code = Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile);
+  bool old_is_lazy = lazy_code == reinterpret_cast<Code*>(
+      READ_INTPTR_FIELD(this, kCodeOffset + core * kPointerSize));
+  bool new_is_lazy = lazy_code == value;
+  
+  WRITE_INTPTR_FIELD(this, kCodeOffset +
+      core * kPointerSize, reinterpret_cast<intptr_t>(value));
+
+  bool new_is_builtin = Isolate::Current()->builtins()->Lookup(value->entry()) != NULL;
+
+  // we replace other core's code with the provided value or LazyCompile
+  // except when the new code is the result of lazy compilation
+  if (old_is_lazy && !new_is_builtin)
+    return;
+
+  if (!new_is_builtin) {
+    value = lazy_code;
+  }
+
+  for (int i = 0; i < CoreId::kMaxCores; i++) {
+    if (i != core) {
+       WRITE_INTPTR_FIELD(this, kCodeOffset +
+          i * kPointerSize, reinterpret_cast<intptr_t>(value));
+    }
+  }
 }
 
 
@@ -3774,16 +3808,44 @@ Code* JSFunction::code() {
 
 
 Code* JSFunction::unchecked_code() {
+  int core = CoreId::Current().ToInteger();
   return reinterpret_cast<Code*>(
-      Code::GetObjectFromEntryAddress(FIELD_ADDR(this, kCodeEntryOffset)));
+      Code::GetObjectFromEntryAddress(FIELD_ADDR(this, kCodeEntryOffset +
+          core * kPointerSize)));
 }
 
 
 void JSFunction::set_code(Code* value) {
   // Skip the write barrier because code is never in new space.
   ASSERT(!HEAP->InNewSpace(value));
+  int core = CoreId::Current().ToInteger();
+  Code* lazy_code = Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile);
+  Address lazy_code_entry = lazy_code->entry();
+  bool old_is_lazy = lazy_code_entry == reinterpret_cast<Address>(
+      READ_INTPTR_FIELD(this, kCodeEntryOffset + core * kPointerSize));
+  bool new_is_lazy = lazy_code == value;
+  
   Address entry = value->entry();
-  WRITE_INTPTR_FIELD(this, kCodeEntryOffset, reinterpret_cast<intptr_t>(entry));
+  WRITE_INTPTR_FIELD(this, kCodeEntryOffset +
+      core * kPointerSize, reinterpret_cast<intptr_t>(entry));
+
+  bool new_is_builtin = Isolate::Current()->builtins()->Lookup(entry) != NULL;
+
+  // we replace other core's code with the provided value or LazyCompile
+  // except when the new code is the result of lazy compilation
+  if (old_is_lazy && !new_is_builtin)
+    return;
+
+  if (!new_is_builtin) {
+    entry = lazy_code_entry;
+  }
+
+  for (int i = 0; i < CoreId::kMaxCores; i++) {
+    if (i != core) {
+       WRITE_INTPTR_FIELD(this, kCodeEntryOffset +
+          i * kPointerSize, reinterpret_cast<intptr_t>(entry));
+    }
+  }
 }
 
 

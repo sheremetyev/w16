@@ -247,6 +247,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
 #undef C
   };
 
+// TODO(mininode): fix serialization
   for (uint16_t i = 0; i < Isolate::kIsolateAddressCount; ++i) {
     Add(isolate->get_address_from_id((Isolate::AddressId)i),
         TOP_ADDRESS, i, AddressNames[i]);

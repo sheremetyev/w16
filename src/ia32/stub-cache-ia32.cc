@@ -2432,7 +2432,8 @@ MaybeObject* CallStubCompiler::CompileCallGlobal(
     // TODO(kasperl): For now, we always call indirectly through the
     // code field in the function to allow recompilation to take effect
     // without changing any of the call sites.
-    __ InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
+    __ LoadCoreId(ecx);
+    __ InvokeCode(CorePointerOperand(edi, JSFunction::kCodeEntryOffset, ecx),
                   expected, arguments(), JUMP_FUNCTION,
                   NullCallWrapper(), call_kind);
   } else {

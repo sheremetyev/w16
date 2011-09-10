@@ -598,6 +598,10 @@ class MacroAssembler: public Assembler {
 
   MaybeObject* TryJumpToExternalReference(const ExternalReference& ext);
 
+  // Access Isolate's thread-local data address into ecx
+  void LoadThreadIsolateAddress(Register reg);
+
+  void LoadCoreId(Register reg);
 
   // ---------------------------------------------------------------------------
   // Utilities
@@ -768,6 +772,10 @@ static inline Operand FieldOperand(Register object, int offset) {
   return Operand(object, offset - kHeapObjectTag);
 }
 
+static inline Operand CorePointerOperand(Register object, int offset, Register index) {
+  return Operand(object, index, times_pointer_size,
+                 offset - kHeapObjectTag);
+}
 
 // Generate an Operand for loading an indexed field from an object.
 static inline Operand FieldOperand(Register object,

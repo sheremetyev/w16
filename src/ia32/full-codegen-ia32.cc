@@ -265,6 +265,26 @@ void FullCodeGenerator::Generate(CompilationInfo* info) {
       VisitDeclarations(scope()->declarations());
     }
 
+    { Comment cmnt(masm_, "[ Thread check");
+      // Make sure the code is executed on the thread it was compiled
+      NearLabel ok;
+      __ push(eax);
+      __ push(ecx);
+      __ push(edx);
+      // the following call will destroy eax, ecx and edx
+      __ call(FUNCTION_ADDR(CoreId::CurrentInt), RelocInfo::RUNTIME_ENTRY);
+      __ cmp(eax, CoreId::CurrentInt());
+      __ j(equal, &ok, taken);
+      __ pop(edx);
+      __ pop(ecx);
+      __ pop(eax);
+      __ Abort("Function compiled for different thread.");
+      __ bind(&ok);
+      __ pop(edx);
+      __ pop(ecx);
+      __ pop(eax);
+    }
+
     { Comment cmnt(masm_, "[ Stack check");
       PrepareForBailoutForId(AstNode::kDeclarationsId, NO_REGISTERS);
       Label ok;

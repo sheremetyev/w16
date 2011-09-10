@@ -138,6 +138,7 @@ class RegExpStack {
 
   friend class ExternalReference;
   friend class Isolate;
+  friend class ThreadLocalTop;
   friend class RegExpStackScope;
 
   DISALLOW_COPY_AND_ASSIGN(RegExpStack);

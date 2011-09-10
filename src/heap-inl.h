@@ -37,6 +37,15 @@
 namespace v8 {
 namespace internal {
 
+static Mutex* heap_lock_mutex_ = OS::CreateMutex();
+
+class HeapLock : public ScopedLock {
+  public:
+    HeapLock() : ScopedLock(heap_lock_mutex_) {
+    }
+};
+
+
 void PromotionQueue::insert(HeapObject* target, int size) {
   *(--rear_) = reinterpret_cast<intptr_t>(target);
   *(--rear_) = size;
@@ -150,7 +159,10 @@ MaybeObject* Heap::CopyFixedDoubleArray(FixedDoubleArray* src) {
 MaybeObject* Heap::AllocateRaw(int size_in_bytes,
                                AllocationSpace space,
                                AllocationSpace retry_space) {
-  ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  HeapLock heap_lock;
+  //TODO(mininode): will need to enable check if we enable GC
+  //ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  ASSERT(gc_state_ == NOT_IN_GC);
   ASSERT(space != NEW_SPACE ||
          retry_space == OLD_POINTER_SPACE ||
          retry_space == OLD_DATA_SPACE ||
@@ -424,6 +436,7 @@ void Heap::ScavengeObject(HeapObject** p, HeapObject* object) {
 
 
 bool Heap::CollectGarbage(AllocationSpace space) {
+  return false;
   return CollectGarbage(space, SelectGarbageCollector(space));
 }
 

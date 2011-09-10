@@ -268,6 +268,7 @@ class CompilationCache {
   bool enabled_;
 
   friend class Isolate;
+  friend class ThreadLocalTop;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationCache);
 };

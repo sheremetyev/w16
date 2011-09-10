@@ -307,8 +307,17 @@ Isolate* Isolate::default_isolate_ = NULL;
 Thread::LocalStorageKey Isolate::isolate_key_;
 Thread::LocalStorageKey Isolate::thread_id_key_;
 Thread::LocalStorageKey Isolate::per_isolate_thread_data_key_;
+Thread::LocalStorageKey Isolate::thread_local_top_key_;
 Mutex* Isolate::process_wide_mutex_ = OS::CreateMutex();
 Isolate::ThreadDataTable* Isolate::thread_data_table_ = NULL;
+int32_t Isolate::k_c_entry_fp_offset = OFFSET_OF(ThreadLocalTop, c_entry_fp_);
+int32_t Isolate::k_handler_offset = OFFSET_OF(ThreadLocalTop, handler_);
+int32_t Isolate::k_context_offset = OFFSET_OF(ThreadLocalTop, context_);
+int32_t Isolate::k_pending_exception_offset = OFFSET_OF(ThreadLocalTop, pending_exception_);
+int32_t Isolate::k_external_caught_exception_offset = OFFSET_OF(ThreadLocalTop, external_caught_exception_);
+#ifdef ENABLE_LOGGING_AND_PROFILING
+int32_t Isolate::k_js_entry_sp_offset = OFFSET_OF(ThreadLocalTop, js_entry_sp_);
+#endif
 
 
 class IsolateInitializer {
@@ -377,14 +386,19 @@ void Isolate::EnsureDefaultIsolate() {
     isolate_key_ = Thread::CreateThreadLocalKey();
     thread_id_key_ = Thread::CreateThreadLocalKey();
     per_isolate_thread_data_key_ = Thread::CreateThreadLocalKey();
+    thread_local_top_key_ = Thread::CreateThreadLocalKey();
     thread_data_table_ = new Isolate::ThreadDataTable();
+    Thread::SetThreadLocal(thread_local_top_key_, new ThreadLocalTop());
     default_isolate_ = new Isolate();
   }
-  // Can't use SetIsolateThreadLocals(default_isolate_, NULL) here
+  // Can't use SetIsolateThreadLocals(default_isolate_, NULL, NULL) here
   // becase a non-null thread data may be already set.
   if (Thread::GetThreadLocal(isolate_key_) == NULL) {
     Thread::SetThreadLocal(isolate_key_, default_isolate_);
+    default_isolate_->thread_local_top()->InitializeIsolateLinks(default_isolate_);
   }
+
+  Builtins::InitBuiltinFunctionTable();
 }
 
 
@@ -1378,7 +1392,6 @@ Isolate::Isolate()
       preallocated_message_space_(NULL),
       bootstrapper_(NULL),
       runtime_profiler_(NULL),
-      compilation_cache_(NULL),
       counters_(NULL),
       code_range_(NULL),
       // Must be initialized early to allow v8::SetResourceConstraints calls.
@@ -1388,7 +1401,6 @@ Isolate::Isolate()
       debugger_access_(OS::CreateMutex()),
       logger_(NULL),
       stats_table_(NULL),
-      stub_cache_(NULL),
       deoptimizer_data_(NULL),
       capture_stack_trace_for_uncaught_exceptions_(false),
       stack_trace_for_uncaught_exceptions_frame_limit_(0),
@@ -1398,27 +1410,19 @@ Isolate::Isolate()
       keyed_lookup_cache_(NULL),
       context_slot_cache_(NULL),
       descriptor_lookup_cache_(NULL),
-      handle_scope_implementer_(NULL),
       unicode_cache_(NULL),
       in_use_list_(0),
       free_list_(0),
       preallocated_storage_preallocated_(false),
-      pc_to_code_cache_(NULL),
-      write_input_buffer_(NULL),
       global_handles_(NULL),
       context_switcher_(NULL),
       thread_manager_(NULL),
       string_tracker_(NULL),
-      regexp_stack_(NULL),
       embedder_data_(NULL) {
   TRACE_ISOLATE(constructor);
 
-  memset(isolate_addresses_, 0,
-      sizeof(isolate_addresses_[0]) * (kIsolateAddressCount + 1));
-
   heap_.isolate_ = this;
-  zone_.isolate_ = this;
-  stack_guard_.isolate_ = this;
+  stm_.isolate_ = this;
 
   // ThreadManager is initialized early to support locking an isolate
   // before it is entered.
@@ -1444,8 +1448,6 @@ Isolate::Isolate()
   debugger_ = NULL;
 #endif
 
-  handle_scope_data_.Initialize();
-
 #define ISOLATE_INIT_EXECUTE(type, name, initial_value)                        \
   name##_ = (initial_value);
   ISOLATE_INIT_LIST(ISOLATE_INIT_EXECUTE)
@@ -1466,7 +1468,8 @@ void Isolate::TearDown() {
   // initializing the thread data.
   PerIsolateThreadData* saved_data = CurrentPerIsolateThreadData();
   Isolate* saved_isolate = UncheckedCurrent();
-  SetIsolateThreadLocals(this, NULL);
+  ThreadLocalTop* saved_top = thread_local_top();
+  SetIsolateThreadLocals(this, NULL, NULL);
 
   Deinit();
 
@@ -1479,7 +1482,7 @@ void Isolate::TearDown() {
   }
 
   // Restore the previous current isolate.
-  SetIsolateThreadLocals(saved_isolate, saved_data);
+  SetIsolateThreadLocals(saved_isolate, saved_data, saved_top);
 }
 
 
@@ -1523,9 +1526,11 @@ void Isolate::Deinit() {
 
 
 void Isolate::SetIsolateThreadLocals(Isolate* isolate,
-                                     PerIsolateThreadData* data) {
+                                     PerIsolateThreadData* data,
+                                     ThreadLocalTop* top) {
   Thread::SetThreadLocal(isolate_key_, isolate);
   Thread::SetThreadLocal(per_isolate_thread_data_key_, data);
+  Thread::SetThreadLocal(thread_local_top_key_, top);
 }
 
 
@@ -1541,8 +1546,6 @@ Isolate::~Isolate() {
   delete unicode_cache_;
   unicode_cache_ = NULL;
 
-  delete regexp_stack_;
-  regexp_stack_ = NULL;
 
   delete descriptor_lookup_cache_;
   descriptor_lookup_cache_ = NULL;
@@ -1553,8 +1556,6 @@ Isolate::~Isolate() {
 
   delete transcendental_cache_;
   transcendental_cache_ = NULL;
-  delete stub_cache_;
-  stub_cache_ = NULL;
   delete stats_table_;
   stats_table_ = NULL;
 
@@ -1564,21 +1565,13 @@ Isolate::~Isolate() {
   delete counters_;
   counters_ = NULL;
 
-  delete handle_scope_implementer_;
-  handle_scope_implementer_ = NULL;
   delete break_access_;
   break_access_ = NULL;
   delete debugger_access_;
   debugger_access_ = NULL;
 
-  delete compilation_cache_;
-  compilation_cache_ = NULL;
   delete bootstrapper_;
   bootstrapper_ = NULL;
-  delete pc_to_code_cache_;
-  pc_to_code_cache_ = NULL;
-  delete write_input_buffer_;
-  write_input_buffer_ = NULL;
 
   delete context_switcher_;
   context_switcher_ = NULL;
@@ -1608,8 +1601,8 @@ Isolate::~Isolate() {
 
 
 void Isolate::InitializeThreadLocal() {
-  thread_local_top_.isolate_ = this;
-  thread_local_top_.Initialize();
+  thread_local_top()->isolate_ = this;
+  thread_local_top()->Initialize();
   clear_pending_exception();
   clear_pending_message();
   clear_scheduled_exception();
@@ -1620,13 +1613,13 @@ void Isolate::PropagatePendingExceptionToExternalTryCatch() {
   ASSERT(has_pending_exception());
 
   bool external_caught = IsExternallyCaught();
-  thread_local_top_.external_caught_exception_ = external_caught;
+  thread_local_top()->external_caught_exception_ = external_caught;
 
   if (!external_caught) return;
 
-  if (thread_local_top_.pending_exception_ == Failure::OutOfMemoryException()) {
+  if (thread_local_top()->pending_exception_ == Failure::OutOfMemoryException()) {
     // Do not propagate OOM exception: we should kill VM asap.
-  } else if (thread_local_top_.pending_exception_ ==
+  } else if (thread_local_top()->pending_exception_ ==
              heap()->termination_exception()) {
     try_catch_handler()->can_continue_ = false;
     try_catch_handler()->exception_ = heap()->null_value();
@@ -1636,8 +1629,8 @@ void Isolate::PropagatePendingExceptionToExternalTryCatch() {
     ASSERT(!pending_exception()->IsFailure());
     try_catch_handler()->can_continue_ = true;
     try_catch_handler()->exception_ = pending_exception();
-    if (!thread_local_top_.pending_message_obj_->IsTheHole()) {
-      try_catch_handler()->message_ = thread_local_top_.pending_message_obj_;
+    if (!thread_local_top()->pending_message_obj_->IsTheHole()) {
+      try_catch_handler()->message_ = thread_local_top()->pending_message_obj_;
     }
   }
 }
@@ -1722,14 +1715,6 @@ bool Isolate::Init(Deserializer* des) {
 #endif
 #endif
 
-  { // NOLINT
-    // Ensure that the thread has a valid stack guard.  The v8::Locker object
-    // will ensure this too, but we don't have to use lockers if we are only
-    // using one thread.
-    ExecutionAccess lock(this);
-    stack_guard_.InitThread(lock);
-  }
-
   // Setup the object heap.
   const bool create_heap_objects = (des == NULL);
   ASSERT(!heap_.HasBeenSetup());
@@ -1762,12 +1747,10 @@ bool Isolate::Init(Deserializer* des) {
 #ifdef ENABLE_DEBUGGER_SUPPORT
   debug_->Setup(create_heap_objects);
 #endif
-  stub_cache_->Initialize(create_heap_objects);
 
   // If we are deserializing, read the state into the now-empty heap.
   if (des != NULL) {
     des->Deserialize();
-    stub_cache_->Clear();
   }
 
   // Deserializing may put strange things in the root array's copy of the
@@ -1802,6 +1785,8 @@ StatsTable* Isolate::stats_table() {
 
 
 void Isolate::Enter() {
+  ExecutionAccess(this);
+
   Isolate* current_isolate = NULL;
   PerIsolateThreadData* current_data = CurrentPerIsolateThreadData();
   if (current_data != NULL) {
@@ -1838,14 +1823,28 @@ void Isolate::Enter() {
                                             entry_stack_);
   entry_stack_ = item;
 
-  SetIsolateThreadLocals(this, data);
+  // Find or allocate
+  ThreadLocalTop* top = this->thread_local_top();
+  bool initThreadLocal = false;
+  if (top == NULL) {
+    top = new ThreadLocalTop();
+    top->InitializeIsolateLinks(this);
+    initThreadLocal = true;
+  }
 
+  SetIsolateThreadLocals(this, data, top);
   // In case it's the first time some thread enters the isolate.
   set_thread_id(data->thread_id());
+
+  if (initThreadLocal) {
+      this->InitializeThreadLocal();
+  }
 }
 
 
 void Isolate::Exit() {
+  ExecutionAccess execution_lock(this);
+
   ASSERT(entry_stack_ != NULL);
   ASSERT(entry_stack_->previous_thread_data == NULL ||
          entry_stack_->previous_thread_data->thread_id().Equals(
@@ -1865,8 +1864,11 @@ void Isolate::Exit() {
 
   delete item;
 
+  ThreadLocalTop *top = thread_local_top();
+  delete top;
+
   // Reinit the current thread for the isolate it was running before this one.
-  SetIsolateThreadLocals(previous_isolate, previous_thread_data);
+  SetIsolateThreadLocals(previous_isolate, previous_thread_data, NULL);
 }
 
 

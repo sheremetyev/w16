@@ -6024,6 +6024,7 @@ void HandleScopeImplementer::FreeThreadResources() {
 
 
 char* HandleScopeImplementer::ArchiveThread(char* storage) {
+  UNREACHABLE();
   v8::ImplementationUtilities::HandleScopeData* current =
       isolate_->handle_scope_data();
   handle_scope_data_ = *current;
@@ -6042,6 +6043,7 @@ int HandleScopeImplementer::ArchiveSpacePerThread() {
 
 
 char* HandleScopeImplementer::RestoreThread(char* storage) {
+  UNREACHABLE();
   memcpy(this, storage, sizeof(*this));
   *isolate_->handle_scope_data() = handle_scope_data_;
   return storage + ArchiveSpacePerThread();

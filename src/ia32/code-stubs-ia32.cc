@@ -95,11 +95,25 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   __ mov(FieldOperand(eax, JSFunction::kNextFunctionLinkOffset),
          Immediate(factory->undefined_value()));
 
+  // Set code pointers to lazy compile builtin
+  NearLabel loop;
+  __ mov(ebx, Immediate(ExternalReference(Builtins::kLazyCompile,
+      masm->isolate())));
+  __ mov(ebx, Operand(ebx, 0)); // deref
+  __ lea(ebx, FieldOperand(ebx, Code::kHeaderSize));
+  __ mov(ecx, Immediate(0));
+  __ bind(&loop);
+  __ mov(CorePointerOperand(eax, JSFunction::kCodeEntryOffset, ecx), ebx);
+  __ inc(ecx);
+  __ cmp(ecx, CoreId::kMaxCores);
+  __ j(less, &loop);
+
   // Initialize the code pointer in the function to be the one
   // found in the shared function info object.
-  __ mov(edx, FieldOperand(edx, SharedFunctionInfo::kCodeOffset));
+  __ LoadCoreId(ecx);
+  __ mov(edx, CorePointerOperand(edx, SharedFunctionInfo::kCodeOffset, ecx));
   __ lea(edx, FieldOperand(edx, Code::kHeaderSize));
-  __ mov(FieldOperand(eax, JSFunction::kCodeEntryOffset), edx);
+  __ mov(CorePointerOperand(eax, JSFunction::kCodeEntryOffset, ecx), edx);
 
   // Return and remove the on-stack parameter.
   __ ret(1 * kPointerSize);
@@ -3551,18 +3565,18 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // stack overflow (on the backtrack stack) was detected in RegExp code but
   // haven't created the exception yet. Handle that in the runtime system.
   // TODO(592): Rerunning the RegExp to get the stack overflow exception.
-  ExternalReference pending_exception(Isolate::kPendingExceptionAddress,
-                                      masm->isolate());
+  __ LoadThreadIsolateAddress(ecx);
   __ mov(edx,
          Operand::StaticVariable(ExternalReference::the_hole_value_location(
              masm->isolate())));
-  __ mov(eax, Operand::StaticVariable(pending_exception));
+  __ mov(eax, Operand::ThreadVariable(ecx, Isolate::k_pending_exception_offset));
   __ cmp(edx, Operand(eax));
   __ j(equal, &runtime);
   // For exception, throw the exception again.
 
   // Clear the pending exception variable.
-  __ mov(Operand::StaticVariable(pending_exception), edx);
+  __ LoadThreadIsolateAddress(ecx);
+  __ mov(Operand::ThreadVariable(ecx, Isolate::k_pending_exception_offset), edx);
 
   // Special handling of termination exceptions which are uncatchable
   // by javascript code.
@@ -4340,9 +4354,6 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   __ test(ecx, Immediate(kFailureTagMask));
   __ j(zero, &failure_returned);
 
-  ExternalReference pending_exception_address(
-      Isolate::kPendingExceptionAddress, masm->isolate());
-
   // Check that there is no pending exception, otherwise we
   // should have returned some failure value.
   if (FLAG_debug_code) {
@@ -4350,7 +4361,8 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ mov(edx, Operand::StaticVariable(
         ExternalReference::the_hole_value_location(masm->isolate())));
     Label okay;
-    __ cmp(edx, Operand::StaticVariable(pending_exception_address));
+    __ LoadThreadIsolateAddress(ecx);
+    __ cmp(edx, Operand::ThreadVariable(ecx, Isolate::k_pending_exception_offset));
     // Cannot use check here as it attempts to generate call into runtime.
     __ j(equal, &okay, Label::kNear);
     __ int3();
@@ -4378,9 +4390,10 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Retrieve the pending exception and clear the variable.
   ExternalReference the_hole_location =
       ExternalReference::the_hole_value_location(masm->isolate());
-  __ mov(eax, Operand::StaticVariable(pending_exception_address));
+  __ LoadThreadIsolateAddress(ecx);
+  __ mov(eax, Operand::ThreadVariable(ecx, Isolate::k_pending_exception_offset));
   __ mov(edx, Operand::StaticVariable(the_hole_location));
-  __ mov(Operand::StaticVariable(pending_exception_address), edx);
+  __ mov(Operand::ThreadVariable(ecx, Isolate::k_pending_exception_offset), edx);
 
   // Special handling of termination exceptions which are uncatchable
   // by javascript code.
@@ -4482,15 +4495,13 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ push(ebx);
 
   // Save copies of the top frame descriptor on the stack.
-  ExternalReference c_entry_fp(Isolate::kCEntryFPAddress, masm->isolate());
-  __ push(Operand::StaticVariable(c_entry_fp));
+  __ LoadThreadIsolateAddress(ecx);
+  __ push(Operand::ThreadVariable(ecx, Isolate::k_c_entry_fp_offset));
 
   // If this is the outermost JS call, set js_entry_sp value.
-  ExternalReference js_entry_sp(Isolate::kJSEntrySPAddress,
-                                masm->isolate());
-  __ cmp(Operand::StaticVariable(js_entry_sp), Immediate(0));
+  __ cmp(Operand::ThreadVariable(ecx, Isolate::k_js_entry_sp_offset), Immediate(0));
   __ j(not_equal, &not_outermost_js, Label::kNear);
-  __ mov(Operand::StaticVariable(js_entry_sp), ebp);
+  __ mov(Operand::ThreadVariable(ecx, Isolate::k_js_entry_sp_offset), ebp);
   __ push(Immediate(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
   Label cont;
   __ jmp(&cont, Label::kNear);
@@ -4503,9 +4514,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   // Caught exception: Store result (exception) in the pending
   // exception field in the JSEnv and return a failure sentinel.
-  ExternalReference pending_exception(Isolate::kPendingExceptionAddress,
-                                      masm->isolate());
-  __ mov(Operand::StaticVariable(pending_exception), eax);
+  __ LoadThreadIsolateAddress(ecx);
+  __ mov(Operand::ThreadVariable(ecx, Isolate::k_pending_exception_offset), eax);
   __ mov(eax, reinterpret_cast<int32_t>(Failure::Exception()));
   __ jmp(&exit);
 
@@ -4517,7 +4527,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   ExternalReference the_hole_location =
       ExternalReference::the_hole_value_location(masm->isolate());
   __ mov(edx, Operand::StaticVariable(the_hole_location));
-  __ mov(Operand::StaticVariable(pending_exception), edx);
+  __ LoadThreadIsolateAddress(ecx);
+  __ mov(Operand::ThreadVariable(ecx, Isolate::k_pending_exception_offset), edx);
 
   // Fake a receiver (NULL).
   __ push(Immediate(0));  // receiver
@@ -4549,13 +4560,12 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ cmp(Operand(ebx),
          Immediate(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
   __ j(not_equal, &not_outermost_js_2);
-  __ mov(Operand::StaticVariable(js_entry_sp), Immediate(0));
+  __ mov(Operand::ThreadVariable(ecx, Isolate::k_js_entry_sp_offset), Immediate(0));
   __ bind(&not_outermost_js_2);
 
   // Restore the top frame descriptor from the stack.
-  __ pop(Operand::StaticVariable(ExternalReference(
-      Isolate::kCEntryFPAddress,
-      masm->isolate())));
+  __ LoadThreadIsolateAddress(ecx);
+  __ pop(Operand::ThreadVariable(ecx, Isolate::k_c_entry_fp_offset));
 
   // Restore callee-saved registers (C calling conventions).
   __ pop(ebx);

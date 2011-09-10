@@ -143,8 +143,9 @@ class CodeStub BASE_EMBEDDED {
   virtual ~CodeStub() {}
 
  protected:
+  static const int kCoreBits = 3;
   static const int kMajorBits = 6;
-  static const int kMinorBits = kBitsPerInt - kSmiTagSize - kMajorBits;
+  static const int kMinorBits = kBitsPerInt - kSmiTagSize - kMajorBits - kCoreBits;
 
  private:
   // Lookup the code in the (possibly custom) cache.
@@ -193,15 +194,17 @@ class CodeStub BASE_EMBEDDED {
   // Computes the key based on major and minor.
   uint32_t GetKey() {
     ASSERT(static_cast<int>(MajorKey()) < NUMBER_OF_IDS);
-    return MinorKeyBits::encode(MinorKey()) |
+    return CoreKeyBits::encode(CoreId::Current().ToInteger()) |
+           MinorKeyBits::encode(MinorKey()) |
            MajorKeyBits::encode(MajorKey());
   }
 
   // See comment above, where Instanceof is defined.
   bool AllowsStubCalls() { return MajorKey() <= Instanceof; }
 
-  class MajorKeyBits: public BitField<uint32_t, 0, kMajorBits> {};
-  class MinorKeyBits: public BitField<uint32_t, kMajorBits, kMinorBits> {};
+  class CoreKeyBits: public BitField<uint32_t, 0, kCoreBits> {};
+  class MajorKeyBits: public BitField<uint32_t, kCoreBits, kMajorBits> {};
+  class MinorKeyBits: public BitField<uint32_t, kMajorBits+kCoreBits, kMinorBits> {};
 
   friend class BreakPointIterator;
 };

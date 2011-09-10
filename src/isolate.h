@@ -119,15 +119,6 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 #define RETURN_IF_EMPTY_HANDLE(isolate, call)                       \
   RETURN_IF_EMPTY_HANDLE_VALUE(isolate, call, Failure::Exception())
 
-#define FOR_EACH_ISOLATE_ADDRESS_NAME(C)                \
-  C(Handler, handler)                                   \
-  C(CEntryFP, c_entry_fp)                               \
-  C(Context, context)                                   \
-  C(PendingException, pending_exception)                \
-  C(ExternalCaughtException, external_caught_exception) \
-  C(JSEntrySP, js_entry_sp)
-
-
 // Platform-independent, reliable thread identifier.
 class ThreadId {
  public:
@@ -174,12 +165,26 @@ class ThreadId {
   friend class Isolate;
 };
 
+#define ISOLATE_THREAD_INIT_LIST(V)                                            \
+  /* AssertNoZoneAllocation state. */                                          \
+  V(bool, zone_allow_allocation, true)                                         \
+  /* AstNode state. */                                                         \
+  V(unsigned, ast_node_id, 0)                                                  \
+  V(unsigned, ast_node_count, 0)                                               \
+  /* State for Relocatable. */                                                 \
+  V(Relocatable*, relocatable_top, NULL)                                       \
+  /* SafeStackFrameIterator activations count. */                              \
+  V(int, safe_stack_iterator_counter, 0)                                       \
+  V(uint64_t, enabled_cpu_features, 0)                                         
 
-class ThreadLocalTop BASE_EMBEDDED {
+class ThreadLocalTop {
  public:
   // Does early low-level initialization that does not depend on the
   // isolate being present.
   ThreadLocalTop();
+  void InitializeIsolateLinks(Isolate* isolate);
+
+  ~ThreadLocalTop();
 
   // Initialize the thread data.
   void Initialize();
@@ -210,6 +215,22 @@ class ThreadLocalTop BASE_EMBEDDED {
     try_catch_handler_address_ = address;
   }
 
+#define GLOBAL_ACCESSOR(type, name, initialvalue)                       \
+  inline type name() const {                                            \
+    return name##_;                                                     \
+  }                                                                     \
+  inline void set_##name(type value) {                                  \
+    name##_ = value;                                                    \
+  }
+  ISOLATE_THREAD_INIT_LIST(GLOBAL_ACCESSOR)
+#undef GLOBAL_ACCESSOR
+
+#define GLOBAL_BACKING_STORE(type, name, initialvalue)                         \
+  type name##_;
+  ISOLATE_THREAD_INIT_LIST(GLOBAL_BACKING_STORE)
+#undef GLOBAL_BACKING_STORE
+
+
   void Free() {
     ASSERT(!has_pending_message_);
     ASSERT(!external_caught_exception_);
@@ -217,6 +238,23 @@ class ThreadLocalTop BASE_EMBEDDED {
   }
 
   Isolate* isolate_;
+  // Members moved from Isolate
+  Zone zone_;
+  ZoneObjectList frame_element_constant_list_;
+  ZoneObjectList result_constant_list_;
+  StackGuard stack_guard_;
+  StringInputBuffer* write_input_buffer_;
+  AstSentinels* ast_sentinels_;
+  RuntimeState runtime_state_;
+  StaticResource<SafeStringInputBuffer> compiler_safe_string_input_buffer_;
+  StringInputBuffer objects_string_compare_buffer_a_;
+  StringInputBuffer objects_string_compare_buffer_b_;
+  StaticResource<StringInputBuffer> objects_string_input_buffer_;
+  RegExpStack* regexp_stack_;
+  StubCache* stub_cache_;
+  CompilationCache* compilation_cache_;
+  PcToCodeCache* pc_to_code_cache_;
+
   // The context where the current execution method is created and for variable
   // lookups.
   Context* context_;
@@ -234,6 +272,7 @@ class ThreadLocalTop BASE_EMBEDDED {
   bool external_caught_exception_;
   SaveContext* save_context_;
   v8::TryCatch* catcher_;
+  Transaction* transaction_;
 
   // Stack.
   Address c_entry_fp_;  // the frame pointer of the top c entry frame
@@ -257,6 +296,10 @@ class ThreadLocalTop BASE_EMBEDDED {
 
   // Whether out of memory exceptions should be ignored.
   bool ignore_out_of_memory_;
+
+  // Moved from Isolate
+  v8::ImplementationUtilities::HandleScopeData handle_scope_data_;
+  HandleScopeImplementer* handle_scope_implementer_;
 
  private:
   void InitializeInternal();
@@ -318,8 +361,6 @@ class HashMap;
 typedef List<HeapObject*, PreallocatedStorage> DebugObjectCache;
 
 #define ISOLATE_INIT_LIST(V)                                                   \
-  /* AssertNoZoneAllocation state. */                                          \
-  V(bool, zone_allow_allocation, true)                                         \
   /* SerializerDeserializer state. */                                          \
   V(int, serialize_partial_snapshot_cache_length, 0)                           \
   /* Assembler state. */                                                       \
@@ -335,8 +376,6 @@ typedef List<HeapObject*, PreallocatedStorage> DebugObjectCache;
   V(bool, always_allow_natives_syntax, false)                                  \
   /* Part of the state of liveedit. */                                         \
   V(FunctionInfoListener*, active_function_info_listener, NULL)                \
-  /* State for Relocatable. */                                                 \
-  V(Relocatable*, relocatable_top, NULL)                                       \
   /* State for CodeEntry in profile-generator. */                              \
   V(CodeGenerator*, current_code_generator, NULL)                              \
   V(bool, jump_target_compiling_deferred_code, false)                          \
@@ -346,12 +385,6 @@ typedef List<HeapObject*, PreallocatedStorage> DebugObjectCache;
   V(int*, irregexp_interpreter_backtrack_stack_cache, NULL)                    \
   /* Serializer state. */                                                      \
   V(ExternalReferenceTable*, external_reference_table, NULL)                   \
-  /* AstNode state. */                                                         \
-  V(unsigned, ast_node_id, 0)                                                  \
-  V(unsigned, ast_node_count, 0)                                               \
-  /* SafeStackFrameIterator activations count. */                              \
-  V(int, safe_stack_iterator_counter, 0)                                       \
-  V(uint64_t, enabled_cpu_features, 0)                                         \
   V(CpuProfiler*, cpu_profiler, NULL)                                          \
   V(HeapProfiler*, heap_profiler, NULL)                                        \
   ISOLATE_PLATFORM_INIT_LIST(V)                                                \
@@ -421,13 +454,14 @@ class Isolate {
     DISALLOW_COPY_AND_ASSIGN(PerIsolateThreadData);
   };
 
-
-  enum AddressId {
-#define DECLARE_ENUM(CamelName, hacker_name) k##CamelName##Address,
-    FOR_EACH_ISOLATE_ADDRESS_NAME(DECLARE_ENUM)
-#undef C
-    kIsolateAddressCount
-  };
+  static int32_t k_c_entry_fp_offset;
+  static int32_t k_handler_offset;
+  static int32_t k_context_offset;
+  static int32_t k_pending_exception_offset;
+  static int32_t k_external_caught_exception_offset;
+#ifdef ENABLE_LOGGING_AND_PROFILING
+  static int32_t k_js_entry_sp_offset;
+#endif
 
   // Returns the PerIsolateThreadData for the current thread (or NULL if one is
   // not currently set).
@@ -513,81 +547,79 @@ class Isolate {
   // Mutex for serializing access to debugger.
   Mutex* debugger_access() { return debugger_access_; }
 
-  Address get_address_from_id(AddressId id);
-
   // Access to top context (where the current function object was created).
-  Context* context() { return thread_local_top_.context_; }
+  Context* context() { return thread_local_top()->context_; }
   void set_context(Context* context) {
     ASSERT(context == NULL || context->IsContext());
-    thread_local_top_.context_ = context;
+    thread_local_top()->context_ = context;
   }
-  Context** context_address() { return &thread_local_top_.context_; }
+  Context** context_address() { return &thread_local_top()->context_; }
 
-  SaveContext* save_context() {return thread_local_top_.save_context_; }
+  SaveContext* save_context() {return thread_local_top()->save_context_; }
   void set_save_context(SaveContext* save) {
-    thread_local_top_.save_context_ = save;
+    thread_local_top()->save_context_ = save;
   }
 
   // Access to current thread id.
-  ThreadId thread_id() { return thread_local_top_.thread_id_; }
-  void set_thread_id(ThreadId id) { thread_local_top_.thread_id_ = id; }
+  ThreadId thread_id() { return thread_local_top()->thread_id_; }
+  void set_thread_id(ThreadId id) { thread_local_top()->thread_id_ = id; }
 
   // Interface to pending exception.
   MaybeObject* pending_exception() {
     ASSERT(has_pending_exception());
-    return thread_local_top_.pending_exception_;
+    return thread_local_top()->pending_exception_;
   }
   bool external_caught_exception() {
-    return thread_local_top_.external_caught_exception_;
+    return thread_local_top()->external_caught_exception_;
   }
   void set_external_caught_exception(bool value) {
-    thread_local_top_.external_caught_exception_ = value;
+    thread_local_top()->external_caught_exception_ = value;
   }
   void set_pending_exception(MaybeObject* exception) {
-    thread_local_top_.pending_exception_ = exception;
+    thread_local_top()->pending_exception_ = exception;
   }
   void clear_pending_exception() {
-    thread_local_top_.pending_exception_ = heap_.the_hole_value();
+    thread_local_top()->pending_exception_ = heap_.the_hole_value();
   }
   MaybeObject** pending_exception_address() {
-    return &thread_local_top_.pending_exception_;
+    return &thread_local_top()->pending_exception_;
   }
   bool has_pending_exception() {
-    return !thread_local_top_.pending_exception_->IsTheHole();
+    return !thread_local_top()->pending_exception_->IsTheHole();
   }
   void clear_pending_message() {
-    thread_local_top_.has_pending_message_ = false;
-    thread_local_top_.pending_message_obj_ = heap_.the_hole_value();
-    thread_local_top_.pending_message_script_ = NULL;
+    thread_local_top()->has_pending_message_ = false;
+    thread_local_top()->pending_message_obj_ = heap_.the_hole_value();
+    thread_local_top()->pending_message_script_ = NULL;
   }
   v8::TryCatch* try_catch_handler() {
-    return thread_local_top_.TryCatchHandler();
+    return thread_local_top()->TryCatchHandler();
   }
   Address try_catch_handler_address() {
-    return thread_local_top_.try_catch_handler_address();
+    return thread_local_top()->try_catch_handler_address();
   }
   bool* external_caught_exception_address() {
-    return &thread_local_top_.external_caught_exception_;
+    return &thread_local_top()->external_caught_exception_;
   }
   v8::TryCatch* catcher() {
-    return thread_local_top_.catcher_;
+    return thread_local_top()->catcher_;
   }
   void set_catcher(v8::TryCatch* catcher) {
-    thread_local_top_.catcher_ = catcher;
+    thread_local_top()->catcher_ = catcher;
   }
 
   MaybeObject** scheduled_exception_address() {
-    return &thread_local_top_.scheduled_exception_;
+    return &thread_local_top()->scheduled_exception_;
   }
   MaybeObject* scheduled_exception() {
     ASSERT(has_scheduled_exception());
-    return thread_local_top_.scheduled_exception_;
+    return thread_local_top()->scheduled_exception_;
   }
   bool has_scheduled_exception() {
-    return thread_local_top_.scheduled_exception_ != heap_.the_hole_value();
+    return !thread_local_top()->scheduled_exception_ != heap_.the_hole_value();
   }
   void clear_scheduled_exception() {
-    thread_local_top_.scheduled_exception_ = heap_.the_hole_value();
+    thread_local_top()->scheduled_exception_ = heap_.the_hole_value();
   }
 
   bool IsExternallyCaught();
@@ -604,20 +636,20 @@ class Isolate {
   static Address handler(ThreadLocalTop* thread) { return thread->handler_; }
 
   inline Address* c_entry_fp_address() {
-    return &thread_local_top_.c_entry_fp_;
+    return &thread_local_top()->c_entry_fp_;
   }
-  inline Address* handler_address() { return &thread_local_top_.handler_; }
+  inline Address* handler_address() { return &thread_local_top()->handler_; }
 
   // Bottom JS entry (see StackTracer::Trace in log.cc).
   static Address js_entry_sp(ThreadLocalTop* thread) {
     return thread->js_entry_sp_;
   }
   inline Address* js_entry_sp_address() {
-    return &thread_local_top_.js_entry_sp_;
+    return &thread_local_top()->js_entry_sp_;
   }
 
   // Generated code scratch locations.
-  void* formal_count_address() { return &thread_local_top_.formal_count_; }
+  void* formal_count_address() { return &thread_local_top()->formal_count_; }
 
   // Returns the global object of the current context. It could be
   // a builtin object, or a js global object.
@@ -631,11 +663,11 @@ class Isolate {
   }
 
   Handle<JSBuiltinsObject> js_builtins_object() {
-    return Handle<JSBuiltinsObject>(thread_local_top_.context_->builtins());
+    return Handle<JSBuiltinsObject>(thread_local_top()->context_->builtins());
   }
 
   static int ArchiveSpacePerThread() { return sizeof(ThreadLocalTop); }
-  void FreeThreadResources() { thread_local_top_.Free(); }
+  void FreeThreadResources() { thread_local_top()->Free(); }
 
   // This method is called by the api after operations that may throw
   // exceptions.  If an exception was thrown and not handled by an external
@@ -760,6 +792,16 @@ class Isolate {
   // Accessors.
 #define GLOBAL_ACCESSOR(type, name, initialvalue)                       \
   inline type name() const {                                            \
+    return thread_local_top()->name();                                  \
+  }                                                                     \
+  inline void set_##name(type value) {                                  \
+    thread_local_top()->set_##name(value);                              \
+  }
+  ISOLATE_THREAD_INIT_LIST(GLOBAL_ACCESSOR)
+#undef GLOBAL_ACCESSOR
+
+#define GLOBAL_ACCESSOR(type, name, initialvalue)                       \
+  inline type name() const {                                            \
     ASSERT(OFFSET_OF(Isolate, name##_) == name##_debug_offset_);        \
     return name##_;                                                     \
   }                                                                     \
@@ -794,19 +836,25 @@ class Isolate {
   }
   CodeRange* code_range() { return code_range_; }
   RuntimeProfiler* runtime_profiler() { return runtime_profiler_; }
-  CompilationCache* compilation_cache() { return compilation_cache_; }
+  CompilationCache* compilation_cache() { return thread_local_top()->compilation_cache_; }
   Logger* logger() {
     // Call InitializeLoggingAndCounters() if logging is needed before
     // the isolate is fully initialized.
     ASSERT(logger_ != NULL);
     return logger_;
   }
-  StackGuard* stack_guard() { return &stack_guard_; }
+  StackGuard* stack_guard() { return &(thread_local_top()->stack_guard_); }
   Heap* heap() { return &heap_; }
   StatsTable* stats_table();
-  StubCache* stub_cache() { return stub_cache_; }
+  StubCache* stub_cache() { return thread_local_top()->stub_cache_; }
   DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
-  ThreadLocalTop* thread_local_top() { return &thread_local_top_; }
+  ThreadLocalTop* thread_local_top() const { return reinterpret_cast<ThreadLocalTop*>(Thread::GetThreadLocal(thread_local_top_key_)); }
+
+  static ThreadLocalTop* get_thread_local_top() { return Isolate::Current()->thread_local_top(); }
+
+  STM* stm() { return &stm_; }
+  void set_transaction(Transaction* trans) { thread_local_top()->transaction_ = trans; }
+  Transaction* get_transaction() { return thread_local_top()->transaction_; }
 
   TranscendentalCache* transcendental_cache() const {
     return transcendental_cache_;
@@ -829,21 +877,21 @@ class Isolate {
   }
 
   v8::ImplementationUtilities::HandleScopeData* handle_scope_data() {
-    return &handle_scope_data_;
+    return &thread_local_top()->handle_scope_data_;
   }
   HandleScopeImplementer* handle_scope_implementer() {
-    ASSERT(handle_scope_implementer_);
-    return handle_scope_implementer_;
+    ASSERT(thread_local_top()->handle_scope_implementer_);
+    return thread_local_top()->handle_scope_implementer_;
   }
-  Zone* zone() { return &zone_; }
+  Zone* zone() { return &(thread_local_top()->zone_); }
 
   UnicodeCache* unicode_cache() {
     return unicode_cache_;
   }
 
-  PcToCodeCache* pc_to_code_cache() { return pc_to_code_cache_; }
+  PcToCodeCache* pc_to_code_cache() { return thread_local_top()->pc_to_code_cache_; }
 
-  StringInputBuffer* write_input_buffer() { return write_input_buffer_; }
+  StringInputBuffer* write_input_buffer() { return thread_local_top()->write_input_buffer_; }
 
   GlobalHandles* global_handles() { return global_handles_; }
 
@@ -866,21 +914,23 @@ class Isolate {
   }
 
   StringInputBuffer* objects_string_compare_buffer_a() {
-    return &objects_string_compare_buffer_a_;
+    return &(thread_local_top()->objects_string_compare_buffer_a_);
   }
 
   StringInputBuffer* objects_string_compare_buffer_b() {
-    return &objects_string_compare_buffer_b_;
+    return &(thread_local_top()->objects_string_compare_buffer_b_);
   }
 
   StaticResource<StringInputBuffer>* objects_string_input_buffer() {
-    return &objects_string_input_buffer_;
+    return &(thread_local_top()->objects_string_input_buffer_);
   }
 
-  RuntimeState* runtime_state() { return &runtime_state_; }
+  AstSentinels* ast_sentinels() { return thread_local_top()->ast_sentinels_; }
+
+  RuntimeState* runtime_state() { return &(thread_local_top()->runtime_state_); }
 
   StaticResource<SafeStringInputBuffer>* compiler_safe_string_input_buffer() {
-    return &compiler_safe_string_input_buffer_;
+    return &(thread_local_top()->compiler_safe_string_input_buffer_);
   }
 
   Builtins* builtins() { return &builtins_; }
@@ -890,11 +940,19 @@ class Isolate {
     return &regexp_macro_assembler_canonicalize_;
   }
 
-  RegExpStack* regexp_stack() { return regexp_stack_; }
+  RegExpStack* regexp_stack() { return thread_local_top()->regexp_stack_; }
 
   unibrow::Mapping<unibrow::Ecma262Canonicalize>*
       interp_canonicalize_mapping() {
     return &interp_canonicalize_mapping_;
+  }
+
+  ZoneObjectList* frame_element_constant_list() {
+    return &(thread_local_top()->frame_element_constant_list_);
+  }
+
+  ZoneObjectList* result_constant_list() {
+    return &(thread_local_top()->result_constant_list_);
   }
 
   void* PreallocatedStorageNew(size_t size);
@@ -952,21 +1010,21 @@ class Isolate {
   static const int kJSRegexpStaticOffsetsVectorSize = 50;
 
   Address external_callback() {
-    return thread_local_top_.external_callback_;
+    return thread_local_top()->external_callback_;
   }
   void set_external_callback(Address callback) {
-    thread_local_top_.external_callback_ = callback;
+    thread_local_top()->external_callback_ = callback;
   }
 
   StateTag current_vm_state() {
-    return thread_local_top_.current_vm_state_;
+    return thread_local_top()->current_vm_state_;
   }
 
   void SetCurrentVMState(StateTag state) {
     if (RuntimeProfiler::IsEnabled()) {
       // Make sure thread local top is initialized.
-      ASSERT(thread_local_top_.isolate_ == this);
-      StateTag current_state = thread_local_top_.current_vm_state_;
+      ASSERT(thread_local_top()->isolate_ == this);
+      StateTag current_state = thread_local_top()->current_vm_state_;
       if (current_state != JS && state == JS) {
         // Non-JS -> JS transition.
         RuntimeProfiler::IsolateEnteredJS(this);
@@ -981,7 +1039,7 @@ class Isolate {
         ASSERT((current_state == JS) == (state == JS));
       }
     }
-    thread_local_top_.current_vm_state_ = state;
+    thread_local_top()->current_vm_state_ = state;
   }
 
   void SetData(void* data) { embedder_data_ = data; }
@@ -1036,6 +1094,7 @@ class Isolate {
   static Mutex* process_wide_mutex_;
 
   static Thread::LocalStorageKey per_isolate_thread_data_key_;
+  static Thread::LocalStorageKey thread_local_top_key_;
   static Thread::LocalStorageKey isolate_key_;
   static Thread::LocalStorageKey thread_id_key_;
   static Isolate* default_isolate_;
@@ -1044,7 +1103,8 @@ class Isolate {
   void Deinit();
 
   static void SetIsolateThreadLocals(Isolate* isolate,
-                                     PerIsolateThreadData* data);
+                                     PerIsolateThreadData* data,
+                                     ThreadLocalTop* top);
 
   enum State {
     UNINITIALIZED,    // Some components may not have been allocated.
@@ -1097,24 +1157,22 @@ class Isolate {
   StringStream* incomplete_message_;
   // The preallocated memory thread singleton.
   PreallocatedMemoryThread* preallocated_memory_thread_;
-  Address isolate_addresses_[kIsolateAddressCount + 1];  // NOLINT
   NoAllocationStringAllocator* preallocated_message_space_;
 
   Bootstrapper* bootstrapper_;
   RuntimeProfiler* runtime_profiler_;
-  CompilationCache* compilation_cache_;
   Counters* counters_;
   CodeRange* code_range_;
   Mutex* break_access_;
   Atomic32 debugger_initialized_;
   Mutex* debugger_access_;
+
+  STM stm_;
   Heap heap_;
+
   Logger* logger_;
-  StackGuard stack_guard_;
   StatsTable* stats_table_;
-  StubCache* stub_cache_;
   DeoptimizerData* deoptimizer_data_;
-  ThreadLocalTop thread_local_top_;
   bool capture_stack_trace_for_uncaught_exceptions_;
   int stack_trace_for_uncaught_exceptions_frame_limit_;
   StackTrace::StackTraceOptions stack_trace_for_uncaught_exceptions_options_;
@@ -1123,30 +1181,19 @@ class Isolate {
   KeyedLookupCache* keyed_lookup_cache_;
   ContextSlotCache* context_slot_cache_;
   DescriptorLookupCache* descriptor_lookup_cache_;
-  v8::ImplementationUtilities::HandleScopeData handle_scope_data_;
-  HandleScopeImplementer* handle_scope_implementer_;
-  UnicodeCache* unicode_cache_;
-  Zone zone_;
+  UnicodeCache* unicode_cache_;  
   PreallocatedStorage in_use_list_;
   PreallocatedStorage free_list_;
   bool preallocated_storage_preallocated_;
-  PcToCodeCache* pc_to_code_cache_;
-  StringInputBuffer* write_input_buffer_;
   GlobalHandles* global_handles_;
   ContextSwitcher* context_switcher_;
   ThreadManager* thread_manager_;
-  RuntimeState runtime_state_;
-  StaticResource<SafeStringInputBuffer> compiler_safe_string_input_buffer_;
   Builtins builtins_;
   StringTracker* string_tracker_;
   unibrow::Mapping<unibrow::Ecma262UnCanonicalize> jsregexp_uncanonicalize_;
   unibrow::Mapping<unibrow::CanonicalizationRange> jsregexp_canonrange_;
-  StringInputBuffer objects_string_compare_buffer_a_;
-  StringInputBuffer objects_string_compare_buffer_b_;
-  StaticResource<StringInputBuffer> objects_string_input_buffer_;
   unibrow::Mapping<unibrow::Ecma262Canonicalize>
       regexp_macro_assembler_canonicalize_;
-  RegExpStack* regexp_stack_;
   unibrow::Mapping<unibrow::Ecma262Canonicalize> interp_canonicalize_mapping_;
   void* embedder_data_;
 

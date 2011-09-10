@@ -554,6 +554,7 @@ class RuntimeState {
   StringInputBuffer string_locale_compare_buf2_;
 
   friend class Isolate;
+  friend class ThreadLocalTop;
   friend class Runtime;
 
   DISALLOW_COPY_AND_ASSIGN(RuntimeState);
