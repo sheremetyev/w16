@@ -80,8 +80,8 @@ ThreadLocalTop::ThreadLocalTop()
       regexp_stack_(NULL),
       stub_cache_(NULL),
       compilation_cache_(NULL),
-      transaction_(NULL),
-      pc_to_code_cache_(NULL) {
+      pc_to_code_cache_(NULL),
+      transaction_(NULL) {
   InitializeInternal();
 
 #define ISOLATE_INIT_EXECUTE(type, name, initial_value)                        \
