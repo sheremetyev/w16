@@ -84,9 +84,9 @@ Heap::Heap()
       max_executable_size_(256*MB),
       code_range_size_(512*MB),
 #else
-      reserved_semispace_size_(8*MB),
-      max_semispace_size_(8*MB),
-      initial_semispace_size_(512*KB),
+      reserved_semispace_size_(32*MB),
+      max_semispace_size_(32*MB),
+      initial_semispace_size_(32*MB),
       max_old_generation_size_(512*MB),
       max_executable_size_(128*MB),
       code_range_size_(0),
@@ -454,6 +454,7 @@ void Heap::CollectAllGarbage(bool force_compaction) {
 
 
 void Heap::CollectAllAvailableGarbage() {
+  return;
   // Since we are ignoring the return value, the exact choice of space does
   // not matter, so long as we do not specify NEW_SPACE, which would not
   // cause a full GC.
@@ -478,6 +479,7 @@ void Heap::CollectAllAvailableGarbage() {
 
 
 bool Heap::CollectGarbage(AllocationSpace space, GarbageCollector collector) {
+  return false;
   // The VM is in the GC state until exiting this function.
   VMState state(isolate_, GC);
 
@@ -706,6 +708,7 @@ void Heap::UpdateSurvivalRateTrend(int start_new_space_size) {
 
 bool Heap::PerformGarbageCollection(GarbageCollector collector,
                                     GCTracer* tracer) {
+  return false;
   bool next_gc_likely_to_collect_more = false;
 
   if (collector != SCAVENGER) {
@@ -1907,7 +1910,8 @@ MaybeObject* Heap::AllocateHeapNumber(double value) {
   // This version of AllocateHeapNumber is optimized for
   // allocation in new space.
   STATIC_ASSERT(HeapNumber::kSize <= Page::kMaxHeapObjectSize);
-  ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  //TODO(mininode): ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  ASSERT(gc_state_ == NOT_IN_GC);
   Object* result;
   { MaybeObject* maybe_result = new_space_.AllocateRaw(HeapNumber::kSize);
     if (!maybe_result->ToObject(&result)) return maybe_result;
@@ -2973,7 +2977,6 @@ MaybeObject* Heap::AllocateFunction(Map* function_map,
 MaybeObject* Heap::AllocateArgumentsObject(Object* callee, int length) {
   // To get fast allocation and map sharing for arguments objects we
   // allocate them based on an arguments boilerplate.
-
   JSObject* boilerplate;
   int arguments_object_size;
   bool strict_mode_callee = callee->IsJSFunction() &&
@@ -2991,7 +2994,8 @@ MaybeObject* Heap::AllocateArgumentsObject(Object* callee, int length) {
 
   // This calls Copy directly rather than using Heap::AllocateRaw so we
   // duplicate the check here.
-  ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  //TODO(mininode): ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  ASSERT(gc_state_ == NOT_IN_GC);
 
   // Check that the size of the boilerplate matches our
   // expectations. The ArgumentsAccessStub::GenerateNewObject relies

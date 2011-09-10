@@ -713,10 +713,6 @@ ExternalReference::ExternalReference(StatsCounter* counter)
   : address_(reinterpret_cast<Address>(counter->GetInternalPointer())) {}
 
 
-ExternalReference::ExternalReference(Isolate::AddressId id, Isolate* isolate)
-  : address_(isolate->get_address_from_id(id)) {}
-
-
 ExternalReference::ExternalReference(const SCTableReference& table_ref)
   : address_(table_ref.address()) {}
 

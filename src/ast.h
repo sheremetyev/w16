@@ -1338,6 +1338,7 @@ class AstSentinels {
   EmptyStatement empty_statement_;
 
   friend class Isolate;
+  friend class ThreadLocalTop;
 
   DISALLOW_COPY_AND_ASSIGN(AstSentinels);
 };

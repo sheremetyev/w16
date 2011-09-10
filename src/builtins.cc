@@ -1548,8 +1548,6 @@ class BuiltinFunctionTable {
 
 BuiltinDesc BuiltinFunctionTable::functions_[Builtins::builtin_count + 1];
 
-static const BuiltinFunctionTable builtin_function_table_init;
-
 // Define array of pointers to generators and C builtin functions.
 // We do this in a sort of roundabout way so that we can do the initialization
 // within the lexical scope of Builtins:: and within a context where

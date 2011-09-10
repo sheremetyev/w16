@@ -31,6 +31,7 @@
 #include "builtins.h"
 #include "smart-pointer.h"
 #include "unicode-inl.h"
+#include "stm.h"
 #if V8_TARGET_ARCH_ARM
 #include "arm/constants-arm.h"
 #elif V8_TARGET_ARCH_MIPS
@@ -3454,6 +3455,7 @@ class Code: public HeapObject {
   static inline InLoopFlag ExtractICInLoopFromFlags(Flags flags);
   static inline PropertyType ExtractTypeFromFlags(Flags flags);
   static inline int ExtractArgumentsCountFromFlags(Flags flags);
+  static inline int ExtractCoreIdFromFlags(Flags flags);
   static inline InlineCacheHolderFlag ExtractCacheHolderFromFlags(Flags flags);
   static inline Flags RemoveTypeFromFlags(Flags flags);
 
@@ -3578,7 +3580,8 @@ class Code: public HeapObject {
   static const int kFlagsKindShift           = 8;
   static const int kFlagsICHolderShift       = 12;
   static const int kFlagsExtraICStateShift   = 13;
-  static const int kFlagsArgumentsCountShift = 15;
+  static const int kFlagsCoreIdShift         = 15;
+  static const int kFlagsArgumentsCountShift = 20;
 
   static const int kFlagsICStateMask        = 0x00000007;  // 00000000111
   static const int kFlagsICInLoopMask       = 0x00000008;  // 00000001000
@@ -3586,7 +3589,8 @@ class Code: public HeapObject {
   static const int kFlagsKindMask           = 0x00000F00;  // 11110000000
   static const int kFlagsCacheInPrototypeMapMask = 0x00001000;
   static const int kFlagsExtraICStateMask   = 0x00006000;
-  static const int kFlagsArgumentsCountMask = 0xFFFF8000;
+  static const int kFlagsCoreIdMask         = 0x000F8000;
+  static const int kFlagsArgumentsCountMask = 0xFFF00000;
 
   static const int kFlagsNotUsedInLookup =
       (kFlagsICInLoopMask | kFlagsTypeMask | kFlagsCacheInPrototypeMapMask);
@@ -4411,7 +4415,7 @@ class SharedFunctionInfo: public HeapObject {
   // Pointer fields.
   static const int kNameOffset = HeapObject::kHeaderSize;
   static const int kCodeOffset = kNameOffset + kPointerSize;
-  static const int kScopeInfoOffset = kCodeOffset + kPointerSize;
+  static const int kScopeInfoOffset = kCodeOffset + kPointerSize * CoreId::kMaxCores;
   static const int kConstructStubOffset = kScopeInfoOffset + kPointerSize;
   static const int kInstanceClassNameOffset =
       kConstructStubOffset + kPointerSize;
@@ -4693,7 +4697,7 @@ class JSFunction: public JSObject {
   // kSize) is weak and has special handling during garbage collection.
   static const int kCodeEntryOffset = JSObject::kHeaderSize;
   static const int kPrototypeOrInitialMapOffset =
-      kCodeEntryOffset + kPointerSize;
+      kCodeEntryOffset + kPointerSize * CoreId::kMaxCores;
   static const int kSharedFunctionInfoOffset =
       kPrototypeOrInitialMapOffset + kPointerSize;
   static const int kContextOffset = kSharedFunctionInfoOffset + kPointerSize;

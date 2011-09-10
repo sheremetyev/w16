@@ -591,7 +591,9 @@ Object** Debug::SetUpFrameDropperFrame(StackFrame* bottom_js_frame,
   Memory::Object_at(fp + StandardFrameConstants::kContextOffset) =
       Memory::Object_at(fp + JavaScriptFrameConstants::kFunctionOffset);
 
-  Memory::Object_at(fp + InternalFrameConstants::kCodeOffset) = *code;
+  int core = CoreId::Current().ToInteger();
+  Memory::Object_at(fp + InternalFrameConstants::kCodeOffset +
+      core * kPointerSize) = *code;
   Memory::Object_at(fp + StandardFrameConstants::kMarkerOffset) =
       Smi::FromInt(StackFrame::INTERNAL);
 

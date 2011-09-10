@@ -76,6 +76,7 @@ class Zone {
 
  private:
   friend class Isolate;
+  friend class ThreadLocalTop;
   friend class ZoneScope;
 
   // All pointers returned from New() have this alignment.

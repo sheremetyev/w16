@@ -277,6 +277,7 @@ class CompilationCache {
   HashMap* eager_optimizing_set_;
 
   friend class Isolate;
+  friend class ThreadLocalTop;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationCache);
 };

@@ -319,12 +319,10 @@ void MacroAssembler::EnterExitFramePrologue() {
   push(Immediate(CodeObject()));  // Accessed from ExitFrame::code_slot.
 
   // Save the frame pointer and the context in top.
-  ExternalReference c_entry_fp_address(Isolate::k_c_entry_fp_address,
-                                       isolate());
-  ExternalReference context_address(Isolate::k_context_address,
-                                    isolate());
-  mov(Operand::StaticVariable(c_entry_fp_address), ebp);
-  mov(Operand::StaticVariable(context_address), esi);
+  LoadThreadIsolateAddress(ecx);
+  mov(Operand::ThreadVariable(ecx, Isolate::k_c_entry_fp_offset), ebp);
+
+  mov(Operand::ThreadVariable(ecx, Isolate::k_context_offset), esi);
 }
 
 
@@ -400,16 +398,14 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles) {
 
 void MacroAssembler::LeaveExitFrameEpilogue() {
   // Restore current context from top and clear it in debug mode.
-  ExternalReference context_address(Isolate::k_context_address, isolate());
-  mov(esi, Operand::StaticVariable(context_address));
+  LoadThreadIsolateAddress(ecx);
+  mov(esi, Operand::ThreadVariable(ecx, Isolate::k_context_offset));
 #ifdef DEBUG
-  mov(Operand::StaticVariable(context_address), Immediate(0));
+  mov(Operand::ThreadVariable(ecx, Isolate::k_context_offset), Immediate(0));
 #endif
 
   // Clear the top frame.
-  ExternalReference c_entry_fp_address(Isolate::k_c_entry_fp_address,
-                                       isolate());
-  mov(Operand::StaticVariable(c_entry_fp_address), Immediate(0));
+  mov(Operand::ThreadVariable(ecx, Isolate::k_c_entry_fp_offset), Immediate(0));
 }
 
 
@@ -442,19 +438,20 @@ void MacroAssembler::PushTryHandler(CodeLocation try_location,
     push(Immediate(0));  // NULL frame pointer.
   }
   // Save the current handler as the next handler.
-  push(Operand::StaticVariable(ExternalReference(Isolate::k_handler_address,
-                                                 isolate())));
+  LoadThreadIsolateAddress(ecx);
+  push(Operand::ThreadVariable(ecx, Isolate::k_handler_offset));
+
   // Link this handler as the new current one.
-  mov(Operand::StaticVariable(ExternalReference(Isolate::k_handler_address,
-                                                isolate())),
-      esp);
+  mov(Operand::ThreadVariable(ecx, Isolate::k_handler_offset), esp);
 }
 
 
 void MacroAssembler::PopTryHandler() {
   ASSERT_EQ(0, StackHandlerConstants::kNextOffset);
-  pop(Operand::StaticVariable(ExternalReference(Isolate::k_handler_address,
-                                                isolate())));
+  
+  LoadThreadIsolateAddress(ecx);
+  pop(Operand::ThreadVariable(ecx, Isolate::k_handler_offset));
+  
   add(Operand(esp), Immediate(StackHandlerConstants::kSize - kPointerSize));
 }
 
@@ -469,13 +466,12 @@ void MacroAssembler::Throw(Register value) {
   }
 
   // Drop the sp to the top of the handler.
-  ExternalReference handler_address(Isolate::k_handler_address,
-                                    isolate());
-  mov(esp, Operand::StaticVariable(handler_address));
+  LoadThreadIsolateAddress(ecx);
+  mov(esp, Operand::ThreadVariable(ecx, Isolate::k_handler_offset));
 
   // Restore next handler and frame pointer, discard handler state.
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0);
-  pop(Operand::StaticVariable(handler_address));
+  pop(Operand::ThreadVariable(ecx, Isolate::k_handler_offset));
   STATIC_ASSERT(StackHandlerConstants::kFPOffset == 1 * kPointerSize);
   pop(ebp);
   pop(edx);  // Remove state.
@@ -506,9 +502,8 @@ void MacroAssembler::ThrowUncatchable(UncatchableExceptionType type,
   }
 
   // Drop sp to the top stack handler.
-  ExternalReference handler_address(Isolate::k_handler_address,
-                                    isolate());
-  mov(esp, Operand::StaticVariable(handler_address));
+  LoadThreadIsolateAddress(ecx);
+  mov(esp, Operand::ThreadVariable(ecx, Isolate::k_handler_offset));
 
   // Unwind the handlers until the ENTRY handler is found.
   NearLabel loop, done;
@@ -525,21 +520,17 @@ void MacroAssembler::ThrowUncatchable(UncatchableExceptionType type,
 
   // Set the top handler address to next handler past the current ENTRY handler.
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0);
-  pop(Operand::StaticVariable(handler_address));
+  pop(Operand::ThreadVariable(ecx, Isolate::k_handler_offset));
 
   if (type == OUT_OF_MEMORY) {
     // Set external caught exception to false.
-    ExternalReference external_caught(
-        Isolate::k_external_caught_exception_address,
-        isolate());
+    LoadThreadIsolateAddress(ecx);
     mov(eax, false);
-    mov(Operand::StaticVariable(external_caught), eax);
+    mov(Operand::ThreadVariable(ecx, Isolate::k_external_caught_exception_offset), eax);
 
     // Set pending exception and eax to out of memory exception.
-    ExternalReference pending_exception(Isolate::k_pending_exception_address,
-                                        isolate());
     mov(eax, reinterpret_cast<int32_t>(Failure::OutOfMemoryException()));
-    mov(Operand::StaticVariable(pending_exception), eax);
+    mov(Operand::ThreadVariable(ecx, Isolate::k_pending_exception_offset), eax);
   }
 
   // Clear the context pointer.
@@ -1549,7 +1540,8 @@ void MacroAssembler::InvokeFunction(Register fun,
   SmiUntag(ebx);
 
   ParameterCount expected(ebx);
-  InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
+  LoadCoreId(ecx);
+  InvokeCode(CorePointerOperand(edi, JSFunction::kCodeEntryOffset, ecx),
              expected, actual, flag, call_wrapper);
 }
 
@@ -1568,7 +1560,8 @@ void MacroAssembler::InvokeFunction(JSFunction* function,
     // TODO(kasperl): For now, we always call indirectly through the
     // code field in the function to allow recompilation to take effect
     // without changing any of the call sites.
-    InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
+    LoadCoreId(ecx);
+    InvokeCode(CorePointerOperand(edi, JSFunction::kCodeEntryOffset, ecx),
                expected, actual, flag, call_wrapper);
   } else {
     Handle<Code> code(function->code());
@@ -1589,7 +1582,8 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
   // parameter count to avoid emitting code to do the check.
   ParameterCount expected(0);
   GetBuiltinFunction(edi, id);
-  InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
+  LoadCoreId(ecx);
+  InvokeCode(CorePointerOperand(edi, JSFunction::kCodeEntryOffset, ecx),
              expected, expected, flag, call_wrapper);
 }
 
@@ -1607,7 +1601,8 @@ void MacroAssembler::GetBuiltinEntry(Register target, Builtins::JavaScript id) {
   // Load the JavaScript builtin function from the builtins object.
   GetBuiltinFunction(edi, id);
   // Load the code entry point from the function into the target register.
-  mov(target, FieldOperand(edi, JSFunction::kCodeEntryOffset));
+  LoadCoreId(ecx);
+  mov(target, CorePointerOperand(edi, JSFunction::kCodeEntryOffset, ecx));
 }
 
 
@@ -2018,6 +2013,36 @@ void MacroAssembler::CallCFunction(Register function,
   }
 }
 
+
+void MacroAssembler::LoadThreadIsolateAddress(Register reg) {
+  // eax, ecx and edx can be trashed by C calling conventions
+  // edx:eax can be used for returning values in the outer code
+  // so we'll use ecx here - it's most likely to be unused
+  // and save eax and edx to not break the outer code
+  ASSERT(reg.code() == ecx.code());
+  push(eax);
+  push(edx);
+  // the following call will destroy eax, ecx and edx
+  call(FUNCTION_ADDR(Isolate::get_thread_local_top), RelocInfo::RUNTIME_ENTRY);
+  mov(reg,eax);
+  pop(edx);
+  pop(eax);
+}
+
+void MacroAssembler::LoadCoreId(Register reg) {
+  // eax, ecx and edx can be trashed by C calling conventions
+  // edx:eax can be used for returning values in the outer code
+  // so we'll use ecx here - it's most likely to be unused
+  // and save eax and edx to not break the outer code
+  ASSERT(reg.code() == ecx.code());
+  push(eax);
+  push(edx);
+  // the following call will destroy eax, ecx and edx
+  call(FUNCTION_ADDR(CoreId::CurrentInt), RelocInfo::RUNTIME_ENTRY);
+  mov(reg,eax);
+  pop(edx);
+  pop(eax);
+}
 
 CodePatcher::CodePatcher(byte* address, int size)
     : address_(address),

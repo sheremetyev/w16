@@ -7391,6 +7391,9 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_FinalizeInstanceSize) {
 
 
 RUNTIME_FUNCTION(MaybeObject*, Runtime_LazyCompile) {
+  static Mutex* compile_mutex = OS::CreateMutex();
+  ScopedLock compile_lock(compile_mutex);
+
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -12142,6 +12145,7 @@ const Runtime::Function* Runtime::FunctionForId(Runtime::FunctionId id) {
 
 
 void Runtime::PerformGC(Object* result) {
+  return;
   Isolate* isolate = Isolate::Current();
   Failure* failure = Failure::cast(result);
   if (failure->IsRetryAfterGC()) {

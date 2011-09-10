@@ -279,6 +279,7 @@ class StackGuard {
   ThreadLocal thread_local_;
 
   friend class Isolate;
+  friend class ThreadLocalTop;
   friend class StackLimitCheck;
   friend class PostponeInterruptsScope;
 

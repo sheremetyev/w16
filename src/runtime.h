@@ -530,6 +530,7 @@ class RuntimeState {
   int smi_lexicographic_compare_y_elms_[10];
 
   friend class Isolate;
+  friend class ThreadLocalTop;
   friend class Runtime;
 
   DISALLOW_COPY_AND_ASSIGN(RuntimeState);

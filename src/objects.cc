@@ -493,6 +493,7 @@ MaybeObject* Object::GetProperty(Object* receiver,
   AssertNoContextChange ncc;
   Heap* heap = name->GetHeap();
 
+  /* TODO(mininode): disabled access checks
   // Traverse the prototype chain from the current object (this) to
   // the holder and check for access rights. This avoid traversing the
   // objects more than once in case of interceptors, because the
@@ -502,6 +503,7 @@ MaybeObject* Object::GetProperty(Object* receiver,
   Object* last = result->IsProperty() ? result->holder() : heap->null_value();
   for (Object* current = this; true; current = current->GetPrototype()) {
     if (current->IsAccessCheckNeeded()) {
+      UNREACHABLE();
       // Check if we're allowed to read from the current object. Note
       // that even though we may not actually end up loading the named
       // property from the current object, we still check that we have
@@ -519,6 +521,7 @@ MaybeObject* Object::GetProperty(Object* receiver,
     // absent property.
     if (current == last) break;
   }
+  */
 
   if (!result->IsProperty()) {
     *attributes = ABSENT;
@@ -526,7 +529,13 @@ MaybeObject* Object::GetProperty(Object* receiver,
   }
   *attributes = result->GetAttributes();
   Object* value;
+  
   JSObject* holder = result->holder();
+  holder = heap->isolate()->stm()->RedirectRead(holder);
+  if (holder == NULL) {
+    return heap->isolate()->TerminateExecution();
+  }
+
   switch (result->type()) {
     case NORMAL:
       value = holder->GetNormalizedProperty(result);
@@ -539,11 +548,14 @@ MaybeObject* Object::GetProperty(Object* receiver,
     case CONSTANT_FUNCTION:
       return result->GetConstantFunction();
     case CALLBACKS:
+      // TODO(mininode): handle case with callbacks
       return GetPropertyWithCallback(receiver,
                                      result->GetCallbackObject(),
                                      name,
                                      holder);
     case INTERCEPTOR: {
+      // TODO(mininode): allow interceptors?
+      UNREACHABLE();
       JSObject* recvr = JSObject::cast(receiver);
       return holder->GetPropertyWithInterceptor(recvr, name, attributes);
     }
@@ -2087,6 +2099,14 @@ MaybeObject* JSObject::SetProperty(LookupResult* result,
   // Make sure that the top context does not change when doing callbacks or
   // interceptor calls.
   AssertNoContextChange ncc;
+
+  JSObject* redirect = heap->isolate()->stm()->RedirectWrite(this);
+  if (redirect != this) {
+    if (redirect == NULL) {
+      return heap->isolate()->TerminateExecution();
+    }
+    return redirect->SetProperty(result, name, value, attributes, strict_mode);
+  }
 
   // Optimization for 2-byte strings often used as keys in a decompression
   // dictionary.  We make these short keys into symbols to avoid constantly
@@ -5694,8 +5714,11 @@ void JSFunction::JSFunctionIterateBody(int object_size, ObjectVisitor* v) {
   // Iterate over all fields in the body but take care in dealing with
   // the code entry.
   IteratePointers(v, kPropertiesOffset, kCodeEntryOffset);
-  v->VisitCodeEntry(this->address() + kCodeEntryOffset);
-  IteratePointers(v, kCodeEntryOffset + kPointerSize, object_size);
+  for (int i = 0; i < CoreId::kMaxCores; i++) {
+    v->VisitCodeEntry(this->address() + kCodeEntryOffset + kPointerSize * i);
+  }
+  IteratePointers(v, kCodeEntryOffset +
+      kPointerSize * CoreId::kMaxCores, object_size);
 }
 
 

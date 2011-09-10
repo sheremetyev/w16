@@ -348,6 +348,12 @@ class Operand BASE_EMBEDDED {
                    RelocInfo::EXTERNAL_REFERENCE);
   }
 
+  static Operand ThreadVariable(Register base, int32_t disp) {
+      // TODO(mininode): relocation?
+      ASSERT(base.code() == ecx.code());
+      return Operand(base, disp, RelocInfo::NONE);
+  }
+
   static Operand StaticArray(Register index,
                              ScaleFactor scale,
                              const ExternalReference& arr) {

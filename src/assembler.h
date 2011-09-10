@@ -560,8 +560,6 @@ class ExternalReference BASE_EMBEDDED {
 
   explicit ExternalReference(StatsCounter* counter);
 
-  ExternalReference(Isolate::AddressId id, Isolate* isolate);
-
   explicit ExternalReference(const SCTableReference& table_ref);
 
   // Isolate::Current() as an external reference.

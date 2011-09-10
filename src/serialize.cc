@@ -281,18 +281,11 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
 
   // Top addresses
 
-  const char* AddressNames[] = {
-#define C(name) "Isolate::" #name,
-    ISOLATE_ADDRESS_LIST(C)
-    ISOLATE_ADDRESS_LIST_PROF(C)
-    NULL
-#undef C
-  };
-
-  for (uint16_t i = 0; i < Isolate::k_isolate_address_count; ++i) {
-    Add(isolate->get_address_from_id((Isolate::AddressId)i),
-        TOP_ADDRESS, i, AddressNames[i]);
-  }
+  // TODO(mininode): fix serialization
+  //for (uint16_t i = 0; i < Isolate::k_isolate_address_count; ++i) {
+  //  Add(isolate->get_address_from_id((Isolate::AddressId)i),
+  //      TOP_ADDRESS, i, AddressNames[i]);
+  //}
 
   // Accessors
 #define ACCESSOR_DESCRIPTOR_DECLARATION(name) \

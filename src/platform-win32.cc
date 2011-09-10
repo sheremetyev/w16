@@ -27,9 +27,6 @@
 
 // Platform specific code for Win32.
 
-#define V8_WIN32_HEADERS_FULL
-#include "win32-headers.h"
-
 #include "v8.h"
 
 #include "platform.h"

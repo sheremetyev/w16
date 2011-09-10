@@ -1353,9 +1353,7 @@ static bool CheckActivation(Handle<JSArray> shared_info_array,
 // frames being dropped.
 static bool FixTryCatchHandler(StackFrame* top_frame,
                                StackFrame* bottom_frame) {
-  Address* pointer_address =
-      &Memory::Address_at(Isolate::Current()->get_address_from_id(
-          Isolate::k_handler_address));
+  Address* pointer_address = Isolate::Current()->handler_address();
 
   while (*pointer_address < top_frame->sp()) {
     pointer_address = &Memory::Address_at(*pointer_address);

@@ -32,6 +32,11 @@
 #ifndef V8_V8_H_
 #define V8_V8_H_
 
+#ifdef WIN32
+  #define V8_WIN32_HEADERS_FULL
+  #include "win32-headers.h"
+#endif // WIN32
+
 #if defined(GOOGLE3)
 // Google3 special flag handling.
 #if defined(DEBUG) && defined(NDEBUG)

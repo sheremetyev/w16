@@ -37,6 +37,8 @@
 #include "simulator.h"
 #include "string-stream.h"
 #include "vm-state-inl.h"
+#include "stub-cache.h"
+#include "compilation-cache.h"
 
 
 // TODO(isolates): move to isolate.cc. This stuff is kept here to
@@ -45,10 +47,62 @@
 namespace v8 {
 namespace internal {
 
-ThreadLocalTop::ThreadLocalTop() {
+ThreadLocalTop::ThreadLocalTop()
+    : frame_element_constant_list_(0),
+      result_constant_list_(0),
+      write_input_buffer_(NULL),
+      ast_sentinels_(NULL),
+      regexp_stack_(NULL),
+      stub_cache_(NULL),
+      compilation_cache_(NULL),
+      transaction_(NULL),
+      pc_to_code_cache_(NULL) {
   InitializeInternal();
+  handle_scope_implementer_ = new HandleScopeImplementer();
+  handle_scope_data_.Initialize();
+
+#define ISOLATE_INIT_EXECUTE(type, name, initial_value)                        \
+  name##_ = (initial_value);
+  ISOLATE_THREAD_INIT_LIST(ISOLATE_INIT_EXECUTE)
+#undef ISOLATE_INIT_EXECUTE
+
+  write_input_buffer_ = new StringInputBuffer();
 }
 
+void ThreadLocalTop::InitializeIsolateLinks(Isolate* isolate) {
+  zone_.isolate_ = isolate;
+  stack_guard_.isolate_ = isolate;
+
+  regexp_stack_ = new RegExpStack();
+  regexp_stack_->isolate_ = isolate;
+
+  stub_cache_ = new StubCache(isolate);
+  compilation_cache_ = new CompilationCache(isolate);
+
+  pc_to_code_cache_ = new PcToCodeCache(isolate);
+}
+
+ThreadLocalTop::~ThreadLocalTop() {
+  delete handle_scope_implementer_;
+
+  delete write_input_buffer_;
+  write_input_buffer_ = NULL;
+
+  delete ast_sentinels_;
+  ast_sentinels_ = NULL;
+
+  delete regexp_stack_;
+  regexp_stack_ = NULL;
+
+  delete stub_cache_;
+  stub_cache_ = NULL;
+
+  delete compilation_cache_;
+  compilation_cache_ = NULL;
+
+  delete pc_to_code_cache_;
+  pc_to_code_cache_ = NULL;
+}
 
 void ThreadLocalTop::InitializeInternal() {
   c_entry_fp_ = 0;
@@ -83,18 +137,16 @@ void ThreadLocalTop::Initialize() {
 #endif
 #endif
   thread_id_ = ThreadId::Current();
+
+  ast_sentinels_ = new AstSentinels();
+
+  stub_cache_->Initialize(/*create_heap_objects*/ true);
 }
 
 
 v8::TryCatch* ThreadLocalTop::TryCatchHandler() {
   return TRY_CATCH_FROM_ADDRESS(try_catch_handler_address());
 }
-
-
-Address Isolate::get_address_from_id(Isolate::AddressId id) {
-  return isolate_addresses_[id];
-}
-
 
 char* Isolate::Iterate(ObjectVisitor* v, char* thread_storage) {
   ThreadLocalTop* thread = reinterpret_cast<ThreadLocalTop*>(thread_storage);
@@ -811,22 +863,22 @@ void Isolate::ReportPendingMessages() {
   // since the GenerateThrowOutOfMemory stub cannot make a RuntimeCall to
   // set it.
   HandleScope scope;
-  if (thread_local_top_.pending_exception_ == Failure::OutOfMemoryException()) {
+  if (thread_local_top()->pending_exception_ == Failure::OutOfMemoryException()) {
     context()->mark_out_of_memory();
-  } else if (thread_local_top_.pending_exception_ ==
+  } else if (thread_local_top()->pending_exception_ ==
              heap()->termination_exception()) {
     // Do nothing: if needed, the exception has been already propagated to
     // v8::TryCatch.
   } else {
-    if (thread_local_top_.has_pending_message_) {
-      thread_local_top_.has_pending_message_ = false;
-      if (!thread_local_top_.pending_message_obj_->IsTheHole()) {
+    if (thread_local_top()->has_pending_message_) {
+      thread_local_top()->has_pending_message_ = false;
+      if (!thread_local_top()->pending_message_obj_->IsTheHole()) {
         HandleScope scope;
-        Handle<Object> message_obj(thread_local_top_.pending_message_obj_);
-        if (thread_local_top_.pending_message_script_ != NULL) {
-          Handle<Script> script(thread_local_top_.pending_message_script_);
-          int start_pos = thread_local_top_.pending_message_start_pos_;
-          int end_pos = thread_local_top_.pending_message_end_pos_;
+        Handle<Object> message_obj(thread_local_top()->pending_message_obj_);
+        if (thread_local_top()->pending_message_script_ != NULL) {
+          Handle<Script> script(thread_local_top()->pending_message_script_);
+          int start_pos = thread_local_top()->pending_message_start_pos_;
+          int end_pos = thread_local_top()->pending_message_end_pos_;
           MessageLocation location(script, start_pos, end_pos);
           MessageHandler::ReportMessage(this, &location, message_obj);
         } else {
@@ -960,7 +1012,7 @@ char* Isolate::RestoreThread(char* from) {
   memcpy(reinterpret_cast<char*>(thread_local_top()), from,
          sizeof(ThreadLocalTop));
   // This might be just paranoia, but it seems to be needed in case a
-  // thread_local_top_ is restored on a separate OS thread.
+  // thread_local_top() is restored on a separate OS thread.
 #ifdef USE_SIMULATOR
 #ifdef V8_TARGET_ARCH_ARM
   thread_local_top()->simulator_ = Simulator::current(this);
