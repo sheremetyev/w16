@@ -73,14 +73,64 @@ int ThreadId::GetCurrentThreadId() {
 }
 
 
-ThreadLocalTop::ThreadLocalTop() {
+ThreadLocalTop::ThreadLocalTop()
+    : frame_element_constant_list_(0),
+      result_constant_list_(0),
+      write_input_buffer_(NULL),
+      regexp_stack_(NULL),
+      stub_cache_(NULL),
+      compilation_cache_(NULL),
+      transaction_(NULL),
+      pc_to_code_cache_(NULL) {
   InitializeInternal();
+
+#define ISOLATE_INIT_EXECUTE(type, name, initial_value)                        \
+  name##_ = (initial_value);
+  ISOLATE_THREAD_INIT_LIST(ISOLATE_INIT_EXECUTE)
+#undef ISOLATE_INIT_EXECUTE
+
+  write_input_buffer_ = new StringInputBuffer();
+
   // This flag may be set using v8::V8::IgnoreOutOfMemoryException()
   // before an isolate is initialized. The initialize methods below do
   // not touch it to preserve its value.
   ignore_out_of_memory_ = false;
 }
 
+void ThreadLocalTop::InitializeIsolateLinks(Isolate* isolate) {
+  handle_scope_implementer_ = new HandleScopeImplementer(isolate);
+  handle_scope_data_.Initialize();
+
+  zone_.isolate_ = isolate;
+  stack_guard_.isolate_ = isolate;
+
+  regexp_stack_ = new RegExpStack();
+  regexp_stack_->isolate_ = isolate;
+
+  stub_cache_ = new StubCache(isolate);
+  compilation_cache_ = new CompilationCache(isolate);
+
+  pc_to_code_cache_ = new PcToCodeCache(isolate);
+}
+
+ThreadLocalTop::~ThreadLocalTop() {
+  delete handle_scope_implementer_;
+
+  delete write_input_buffer_;
+  write_input_buffer_ = NULL;
+
+  delete regexp_stack_;
+  regexp_stack_ = NULL;
+
+  delete stub_cache_;
+  stub_cache_ = NULL;
+
+  delete compilation_cache_;
+  compilation_cache_ = NULL;
+
+  delete pc_to_code_cache_;
+  pc_to_code_cache_ = NULL;
+}
 
 void ThreadLocalTop::InitializeInternal() {
   c_entry_fp_ = 0;
@@ -315,9 +365,7 @@ int32_t Isolate::k_handler_offset = OFFSET_OF(ThreadLocalTop, handler_);
 int32_t Isolate::k_context_offset = OFFSET_OF(ThreadLocalTop, context_);
 int32_t Isolate::k_pending_exception_offset = OFFSET_OF(ThreadLocalTop, pending_exception_);
 int32_t Isolate::k_external_caught_exception_offset = OFFSET_OF(ThreadLocalTop, external_caught_exception_);
-#ifdef ENABLE_LOGGING_AND_PROFILING
 int32_t Isolate::k_js_entry_sp_offset = OFFSET_OF(ThreadLocalTop, js_entry_sp_);
-#endif
 
 
 class IsolateInitializer {
@@ -431,11 +479,6 @@ void Isolate::EnterDefaultIsolate() {
 Isolate* Isolate::GetDefaultIsolateForLocking() {
   EnsureDefaultIsolate();
   return default_isolate_;
-}
-
-
-Address Isolate::get_address_from_id(Isolate::AddressId id) {
-  return isolate_addresses_[id];
 }
 
 
@@ -1157,6 +1200,7 @@ void Isolate::ReportPendingMessages() {
   // since the GenerateThrowOutOfMemory stub cannot make a RuntimeCall to
   // set it.
   HandleScope scope;
+  ThreadLocalTop& thread_local_top_ = *thread_local_top();
   if (thread_local_top_.pending_exception_ == Failure::OutOfMemoryException()) {
     context()->mark_out_of_memory();
   } else if (thread_local_top_.pending_exception_ ==
@@ -1537,9 +1581,6 @@ void Isolate::SetIsolateThreadLocals(Isolate* isolate,
 Isolate::~Isolate() {
   TRACE_ISOLATE(destructor);
 
-  // Has to be called while counters_ are still alive.
-  zone_.DeleteKeptSegment();
-
   delete[] assembler_spare_buffer_;
   assembler_spare_buffer_ = NULL;
 
@@ -1679,28 +1720,15 @@ bool Isolate::Init(Deserializer* des) {
   // ensuring that Isolate::Current() == this.
   heap_.SetStackLimits();
 
-#define ASSIGN_ELEMENT(CamelName, hacker_name)                  \
-  isolate_addresses_[Isolate::k##CamelName##Address] =          \
-      reinterpret_cast<Address>(hacker_name##_address());
-  FOR_EACH_ISOLATE_ADDRESS_NAME(ASSIGN_ELEMENT)
-#undef C
-
   string_tracker_ = new StringTracker();
   string_tracker_->isolate_ = this;
-  compilation_cache_ = new CompilationCache(this);
   transcendental_cache_ = new TranscendentalCache();
   keyed_lookup_cache_ = new KeyedLookupCache();
   context_slot_cache_ = new ContextSlotCache();
   descriptor_lookup_cache_ = new DescriptorLookupCache();
   unicode_cache_ = new UnicodeCache();
-  pc_to_code_cache_ = new PcToCodeCache(this);
-  write_input_buffer_ = new StringInputBuffer();
   global_handles_ = new GlobalHandles(this);
   bootstrapper_ = new Bootstrapper();
-  handle_scope_implementer_ = new HandleScopeImplementer(this);
-  stub_cache_ = new StubCache(this);
-  regexp_stack_ = new RegExpStack();
-  regexp_stack_->isolate_ = this;
 
   // Enable logging before setting up the heap
   logger_->Setup();

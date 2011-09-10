@@ -244,7 +244,6 @@ class ThreadLocalTop {
   ZoneObjectList result_constant_list_;
   StackGuard stack_guard_;
   StringInputBuffer* write_input_buffer_;
-  AstSentinels* ast_sentinels_;
   RuntimeState runtime_state_;
   StaticResource<SafeStringInputBuffer> compiler_safe_string_input_buffer_;
   StringInputBuffer objects_string_compare_buffer_a_;
@@ -459,9 +458,7 @@ class Isolate {
   static int32_t k_context_offset;
   static int32_t k_pending_exception_offset;
   static int32_t k_external_caught_exception_offset;
-#ifdef ENABLE_LOGGING_AND_PROFILING
   static int32_t k_js_entry_sp_offset;
-#endif
 
   // Returns the PerIsolateThreadData for the current thread (or NULL if one is
   // not currently set).
@@ -616,7 +613,7 @@ class Isolate {
     return thread_local_top()->scheduled_exception_;
   }
   bool has_scheduled_exception() {
-    return !thread_local_top()->scheduled_exception_ != heap_.the_hole_value();
+    return !(thread_local_top()->scheduled_exception_ != heap_.the_hole_value());
   }
   void clear_scheduled_exception() {
     thread_local_top()->scheduled_exception_ = heap_.the_hole_value();
@@ -705,10 +702,10 @@ class Isolate {
   // exception.
   bool is_out_of_memory();
   bool ignore_out_of_memory() {
-    return thread_local_top_.ignore_out_of_memory_;
+    return thread_local_top()->ignore_out_of_memory_;
   }
   void set_ignore_out_of_memory(bool value) {
-    thread_local_top_.ignore_out_of_memory_ = value;
+    thread_local_top()->ignore_out_of_memory_ = value;
   }
 
   void PrintCurrentStackTrace(FILE* out);
@@ -924,8 +921,6 @@ class Isolate {
   StaticResource<StringInputBuffer>* objects_string_input_buffer() {
     return &(thread_local_top()->objects_string_input_buffer_);
   }
-
-  AstSentinels* ast_sentinels() { return thread_local_top()->ast_sentinels_; }
 
   RuntimeState* runtime_state() { return &(thread_local_top()->runtime_state_); }
 

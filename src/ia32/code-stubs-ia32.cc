@@ -96,7 +96,7 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
          Immediate(factory->undefined_value()));
 
   // Set code pointers to lazy compile builtin
-  NearLabel loop;
+  Label loop;
   __ mov(ebx, Immediate(ExternalReference(Builtins::kLazyCompile,
       masm->isolate())));
   __ mov(ebx, Operand(ebx, 0)); // deref

@@ -267,14 +267,14 @@ void FullCodeGenerator::Generate(CompilationInfo* info) {
 
     { Comment cmnt(masm_, "[ Thread check");
       // Make sure the code is executed on the thread it was compiled
-      NearLabel ok;
+      Label ok;
       __ push(eax);
       __ push(ecx);
       __ push(edx);
       // the following call will destroy eax, ecx and edx
       __ call(FUNCTION_ADDR(CoreId::CurrentInt), RelocInfo::RUNTIME_ENTRY);
       __ cmp(eax, CoreId::CurrentInt());
-      __ j(equal, &ok, taken);
+      __ j(equal, &ok, Label::kNear);
       __ pop(edx);
       __ pop(ecx);
       __ pop(eax);

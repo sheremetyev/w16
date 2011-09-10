@@ -78,10 +78,11 @@ Handle<Value> Async(const Arguments& args) {
 
 class WorkerThread : public v8::internal::Thread {
   Persistent<Context> context_;
+  Isolate* isolate_;
 public:
   WorkerThread(const char* name, Handle<Context> context) : 
-    v8::internal::Thread(reinterpret_cast<v8::internal::Isolate*>(
-      Isolate::GetCurrent()), name) {
+    v8::internal::Thread(name) {
+    isolate_ = Isolate::GetCurrent();
     context_ = Persistent<Context>::New(context);
   }
 
@@ -89,8 +90,7 @@ public:
     SetThreadLocal(thread_name_key, const_cast<char*>(name()));
 
     // enter isolate
-    Isolate::Scope isolate_scope(
-      reinterpret_cast<Isolate*>(isolate()));
+    Isolate::Scope isolate_scope(isolate_);
 
     // enter context
     Context::Scope context_scope(context_);
@@ -127,13 +127,15 @@ public:
       if (e != NULL) {
         // restart transaction until it is successfully committed
         v8::internal::Transaction* transaction = NULL;
+        v8::internal::Isolate* isolate =
+          reinterpret_cast<v8::internal::Isolate*>(isolate_);
         while (true) {
-          transaction = isolate()->stm()->StartTransaction();
+          transaction = isolate->stm()->StartTransaction();
 
           HandleScope handle_scope;
           e->Execute();
 
-          if (isolate()->stm()->CommitTransaction(transaction)) {
+          if (isolate->stm()->CommitTransaction(transaction)) {
             // printf("[%s] Comitted.\n", name());
             break;
           } else {

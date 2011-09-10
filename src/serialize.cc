@@ -237,21 +237,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
         stats_ref_table[i].name);
   }
 
-  // Top addresses
-
-  const char* AddressNames[] = {
-#define BUILD_NAME_LITERAL(CamelName, hacker_name)      \
-    "Isolate::" #hacker_name "_address",
-    FOR_EACH_ISOLATE_ADDRESS_NAME(BUILD_NAME_LITERAL)
-    NULL
-#undef C
-  };
-
 // TODO(mininode): fix serialization
-  for (uint16_t i = 0; i < Isolate::kIsolateAddressCount; ++i) {
-    Add(isolate->get_address_from_id((Isolate::AddressId)i),
-        TOP_ADDRESS, i, AddressNames[i]);
-  }
 
   // Accessors
 #define ACCESSOR_DESCRIPTOR_DECLARATION(name) \
