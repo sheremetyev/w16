@@ -105,9 +105,6 @@
             'DebugInformationFormat': '3',
             'Detect64BitPortabilityProblems': 'false',
             'conditions': [
-              [ 'msvs_multi_core_compile', {
-                'AdditionalOptions': ['/MP'],
-              }],
               ['component=="shared_library"', {
                 'ExceptionHandling': '1',  # /EHsc
               }, {
