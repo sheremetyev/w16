@@ -5,4 +5,7 @@
 namespace v8 {
 namespace internal {
 
+STM::STM() {
+}
+
 } } // namespace v8::internal
