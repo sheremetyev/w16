@@ -39,6 +39,7 @@
 #include "global-handles.h"
 #include "handles.h"
 #include "heap.h"
+#include "stm.h"
 #include "regexp-stack.h"
 #include "runtime-profiler.h"
 #include "runtime.h"
@@ -803,6 +804,7 @@ class Isolate {
   }
   StackGuard* stack_guard() { return &stack_guard_; }
   Heap* heap() { return &heap_; }
+  STM* stm() { return &stm_; }
   StatsTable* stats_table();
   StubCache* stub_cache() { return stub_cache_; }
   DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
@@ -1109,6 +1111,7 @@ class Isolate {
   Atomic32 debugger_initialized_;
   Mutex* debugger_access_;
   Heap heap_;
+  STM stm_;
   Logger* logger_;
   StackGuard stack_guard_;
   StatsTable* stats_table_;

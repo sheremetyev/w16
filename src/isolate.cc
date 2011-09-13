@@ -1417,6 +1417,7 @@ Isolate::Isolate()
       sizeof(isolate_addresses_[0]) * (kIsolateAddressCount + 1));
 
   heap_.isolate_ = this;
+  stm_.isolate_ = this;
   zone_.isolate_ = this;
   stack_guard_.isolate_ = this;
 
