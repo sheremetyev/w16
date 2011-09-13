@@ -170,15 +170,12 @@ int main(int argc, char **argv) {
   V8::SetFlagsFromCommandLine(&argc, argv, true);
 
   if (argc <= 1) {
-    printf("Usage: w16 <script.js> [<threads>] [<V8 flags>]\n");
+    printf("Usage: w16 <script.js> [--threads=<n>] [<V8 flags>]\n");
     return 1;
   }
   char* filename = argv[1];
-  int threads = 1;
+  int threads = v8::internal::FLAG_threads;
 
-  if (argc > 2) {
-    threads = atoi(argv[2]);
-  }
   /*
   const int MAX_THREADS = v8::internal::CoreId::kMaxCores - 1;
   */

@@ -512,6 +512,9 @@ DEFINE_bool(print_unopt_code, false, "print unoptimized code before "
 DEFINE_bool(print_code_verbose, false, "print more information for code")
 DEFINE_bool(print_builtin_code, false, "print generated code for builtins")
 
+// main.cc / stm.cc
+DEFINE_int(threads, 1, "number of event loops to run in parallel")
+
 // Cleanup...
 #undef FLAG_FULL
 #undef FLAG_READONLY
