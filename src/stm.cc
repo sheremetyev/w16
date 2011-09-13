@@ -35,11 +35,10 @@ Handle<Object> STM::RedirectStore(const Handle<Object>& obj) {
   return obj;
 }
 
-Transaction* STM::StartTransaction() {
-  return NULL;
+void STM::StartTransaction() {
 }
 
-bool STM::CommitTransaction(Transaction*) {
+bool STM::CommitTransaction() {
   return true;
 }
 

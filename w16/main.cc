@@ -117,14 +117,13 @@ void EventLoop(v8::internal::STM* stm) {
 
     if (e != NULL) {
       // restart transaction until it is successfully committed
-      v8::internal::Transaction* transaction = NULL;
       while (true) {
-        transaction = stm->StartTransaction();
+        stm->StartTransaction();
 
         HandleScope handle_scope;
         e->Execute();
 
-        if (stm->CommitTransaction(transaction)) {
+        if (stm->CommitTransaction()) {
           break; // while(true)
         } else {
           v8::internal::Barrier_AtomicIncrement(&aborted_transactions, 1);
