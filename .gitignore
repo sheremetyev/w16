@@ -43,6 +43,7 @@ TAGS
 /src/Debug/
 /test/cctest/Debug/
 /w16/Debug/
+/w16/Release/
 /w16/build/
 ipch
 *.sln
