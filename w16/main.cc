@@ -167,12 +167,7 @@ public:
 int main(int argc, char **argv) {
   // disable V8 optimisations
   char flags[1024] = { 0 };
-  //strcat(flags, " --noopt");
-  //strcat(flags, " --always_full_compiler");
-  //strcat(flags, " --nocrankshaft");
-  //strcat(flags, " --debug_code");
-  //strcat(flags, " --nocompilation_cache");
-  //strcat(flags, " --nouse_ic");
+  strcat(flags, " --trace-gc"); // print one trace line following each garbage collection
   V8::SetFlagsFromString(flags, strlen(flags));
 
   // process V8 flags and strip them from the command line
