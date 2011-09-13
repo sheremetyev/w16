@@ -1708,6 +1708,23 @@ class HeapStats {
 };
 
 
+static Mutex* heap_lock_mutex_ = OS::CreateMutex();
+
+class AllocationScope {
+ public:
+  explicit AllocationScope() {
+    heap_lock_mutex_->Lock();
+  }
+
+  ~AllocationScope() {
+    heap_lock_mutex_->Unlock();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(AllocationScope);
+};
+
+
 class AlwaysAllocateScope {
  public:
   AlwaysAllocateScope() {

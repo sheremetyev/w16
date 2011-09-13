@@ -1387,6 +1387,7 @@ class ScavengingVisitor : public StaticVisitorBase {
     ASSERT(object->Size() == object_size);
 
     Heap* heap = map->heap();
+    AllocationScope allocation_scope;
     if (heap->ShouldBePromoted(object->address(), object_size)) {
       MaybeObject* maybe_result;
 
@@ -1973,8 +1974,10 @@ MaybeObject* Heap::AllocateHeapNumber(double value) {
   // allocation in new space.
   STATIC_ASSERT(HeapNumber::kSize <= Page::kMaxHeapObjectSize);
   ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+
   Object* result;
-  { MaybeObject* maybe_result = new_space_.AllocateRaw(HeapNumber::kSize);
+  { AllocationScope allocation_scope;
+    MaybeObject* maybe_result = new_space_.AllocateRaw(HeapNumber::kSize);
     if (!maybe_result->ToObject(&result)) return maybe_result;
   }
   HeapObject::cast(result)->set_map(heap_number_map());
@@ -2890,7 +2893,8 @@ MaybeObject* Heap::AllocateByteArray(int length, PretenureFlag pretenure) {
   }
   int size = ByteArray::SizeFor(length);
   Object* result;
-  { MaybeObject* maybe_result = (size <= MaxObjectSizeInPagedSpace())
+  { AllocationScope allocation_scope;
+    MaybeObject* maybe_result = (size <= MaxObjectSizeInPagedSpace())
                    ? old_data_space_->AllocateRaw(size)
                    : lo_space_->AllocateRaw(size);
     if (!maybe_result->ToObject(&result)) return maybe_result;
@@ -2971,6 +2975,7 @@ MaybeObject* Heap::CreateCode(const CodeDesc& desc,
   int body_size = RoundUp(desc.instr_size, kObjectAlignment);
   int obj_size = Code::SizeFor(body_size);
   ASSERT(IsAligned(static_cast<intptr_t>(obj_size), kCodeAlignment));
+  AllocationScope allocation_scope;
   MaybeObject* maybe_result;
   // Large code objects and code objects which should stay at a fixed address
   // are allocated in large object space.
@@ -3018,6 +3023,7 @@ MaybeObject* Heap::CreateCode(const CodeDesc& desc,
 MaybeObject* Heap::CopyCode(Code* code) {
   // Allocate an object the same size as the code object.
   int obj_size = code->Size();
+  AllocationScope allocation_scope;
   MaybeObject* maybe_result;
   if (obj_size > MaxObjectSizeInPagedSpace()) {
     maybe_result = lo_space_->AllocateRawCode(obj_size);
@@ -3061,6 +3067,7 @@ MaybeObject* Heap::CopyCode(Code* code, Vector<byte> reloc_info) {
   size_t relocation_offset =
       static_cast<size_t>(code->instruction_end() - old_addr);
 
+  AllocationScope allocation_scope;
   MaybeObject* maybe_result;
   if (new_obj_size > MaxObjectSizeInPagedSpace()) {
     maybe_result = lo_space_->AllocateRawCode(new_obj_size);
@@ -3548,7 +3555,8 @@ MaybeObject* Heap::CopyJSObject(JSObject* source) {
                  JSObject::kHeaderSize,
                  (object_size - JSObject::kHeaderSize) / kPointerSize);
   } else {
-    { MaybeObject* maybe_clone = new_space_.AllocateRaw(object_size);
+    { AllocationScope allocation_scope;
+      MaybeObject* maybe_clone = new_space_.AllocateRaw(object_size);
       if (!maybe_clone->ToObject(&clone)) return maybe_clone;
     }
     ASSERT(InNewSpace(clone));
@@ -3813,7 +3821,8 @@ MaybeObject* Heap::AllocateInternalSymbol(unibrow::CharacterStream* buffer,
 
   // Allocate string.
   Object* result;
-  { MaybeObject* maybe_result = (size > MaxObjectSizeInPagedSpace())
+  { AllocationScope allocation_scope;
+    MaybeObject* maybe_result = (size > MaxObjectSizeInPagedSpace())
                    ? lo_space_->AllocateRaw(size)
                    : old_data_space_->AllocateRaw(size);
     if (!maybe_result->ToObject(&result)) return maybe_result;
@@ -3929,6 +3938,7 @@ MaybeObject* Heap::AllocateRawFixedArray(int length) {
   if (always_allocate()) return AllocateFixedArray(length, TENURED);
   // Allocate the raw data for a fixed array.
   int size = FixedArray::SizeFor(length);
+  AllocationScope allocation_scope;
   return size <= kMaxObjectSizeInNewSpace
       ? new_space_.AllocateRaw(size)
       : lo_space_->AllocateRawFixedArray(size);
