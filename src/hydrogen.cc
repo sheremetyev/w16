@@ -649,8 +649,7 @@ Handle<Code> HGraph::Compile(CompilationInfo* info) {
       PrintF("Crankshaft Compiler - ");
     }
     CodeGenerator::MakeCodePrologue(info);
-    Code::Flags flags =
-        Code::ComputeFlags(Code::OPTIMIZED_FUNCTION, NOT_IN_LOOP);
+    Code::Flags flags = Code::ComputeFlags(Code::OPTIMIZED_FUNCTION);
     Handle<Code> code =
         CodeGenerator::MakeCodeEpilogue(&assembler, flags, info);
     generator.FinishCode(code);
@@ -1649,18 +1648,20 @@ Representation HInferRepresentation::TryChange(HValue* value) {
   int non_tagged_count = double_count + int32_count;
 
   // If a non-loop phi has tagged uses, don't convert it to untagged.
-  if (value->IsPhi() && !value->block()->IsLoopHeader()) {
-    if (tagged_count > 0) return Representation::None();
+  if (value->IsPhi() && !value->block()->IsLoopHeader() && tagged_count > 0) {
+    return Representation::None();
   }
 
-  if (non_tagged_count >= tagged_count) {
-    if (int32_count > 0) {
-      if (!value->IsPhi() || value->IsConvertibleToInteger()) {
-        return Representation::Integer32();
-      }
-    }
-    if (double_count > 0) return Representation::Double();
+  // Prefer unboxing over boxing, the latter is more expensive.
+  if (tagged_count > non_tagged_count) Representation::None();
+
+  // Prefer Integer32 over Double, if possible.
+  if (int32_count > 0 && value->IsConvertibleToInteger()) {
+    return Representation::Integer32();
   }
+
+  if (double_count > 0) return Representation::Double();
+
   return Representation::None();
 }
 
@@ -5913,7 +5914,9 @@ void HGraphBuilder::GenerateIsFunction(CallRuntime* call) {
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* value = Pop();
   HHasInstanceTypeAndBranch* result =
-      new(zone()) HHasInstanceTypeAndBranch(value, JS_FUNCTION_TYPE);
+      new(zone()) HHasInstanceTypeAndBranch(value,
+                                            JS_FUNCTION_TYPE,
+                                            JS_FUNCTION_PROXY_TYPE);
   return ast_context()->ReturnControl(result, call->id());
 }
 
