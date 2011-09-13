@@ -170,12 +170,11 @@ int main(int argc, char **argv) {
   V8::SetFlagsFromCommandLine(&argc, argv, true);
 
   if (argc <= 1) {
-    printf("Usage: w16 <script.js> [<threads>] [<param>] [<V8 flags>]\n");
+    printf("Usage: w16 <script.js> [<threads>] [<V8 flags>]\n");
     return 1;
   }
   char* filename = argv[1];
   int threads = 1;
-  int param = 1000; // just some default value
 
   if (argc > 2) {
     threads = atoi(argv[2]);
@@ -189,10 +188,6 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (argc > 3) {
-    param = atoi(argv[3]);
-  }
-
   V8::Initialize();
 
   // create a stack-allocated handle scope
@@ -203,7 +198,6 @@ int main(int argc, char **argv) {
   global->Set(String::New("load"),  FunctionTemplate::New(Load));
   global->Set(String::New("async"), FunctionTemplate::New(Async));
   global->Set(String::New("print"), FunctionTemplate::New(Print));
-  global->Set(String::New("PARAM"), Integer::New(param));
 
   // create a new context
   Persistent<Context> context = Context::New(NULL, global);
@@ -237,8 +231,8 @@ int main(int argc, char **argv) {
 
   int64_t stop_time = v8::internal::OS::Ticks();
   int milliseconds = static_cast<int>(stop_time - start_time) / 1000;
-  printf("%d threads, %d param, %d ms, %d aborts\n",
-    threads, param, milliseconds, aborted_transactions);
+  printf("%d threads, %d ms, %d aborts\n",
+    threads, milliseconds, aborted_transactions);
 
   // dispose the persistent context
   context.Dispose();
