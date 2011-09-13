@@ -5,6 +5,9 @@
 namespace v8 {
 namespace internal {
 
+class Transaction {
+};
+
 STM::STM() : heap_mutex_(OS::CreateMutex()) {
 }
 
@@ -30,6 +33,14 @@ Handle<Object> STM::RedirectLoad(const Handle<Object>& obj) {
 
 Handle<Object> STM::RedirectStore(const Handle<Object>& obj) {
   return obj;
+}
+
+Transaction* STM::StartTransaction() {
+  return NULL;
+}
+
+bool STM::CommitTransaction(Transaction*) {
+  return true;
 }
 
 } } // namespace v8::internal

@@ -6,6 +6,8 @@
 namespace v8 {
 namespace internal {
 
+class Transaction;
+
 class STM {
  public:
   void EnterAllocationScope();
@@ -16,6 +18,9 @@ class STM {
 
   Handle<Object> RedirectLoad(const Handle<Object>& obj);
   Handle<Object> RedirectStore(const Handle<Object>& obj);
+
+  Transaction* StartTransaction();
+  bool CommitTransaction(Transaction* trans);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(STM);

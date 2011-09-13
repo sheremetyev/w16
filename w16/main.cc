@@ -85,6 +85,56 @@ Handle<Value> Async(const Arguments& args) {
   return Undefined();
 }
 
+void EventLoop(v8::internal::STM* stm) {
+  bool active = true;
+  v8::internal::Barrier_AtomicIncrement(&running_threads, 1);
+
+  // loop until queue is empty and others are idle too
+  while (true) {
+    Event* e = NULL;
+    {
+      v8::internal::ScopedLock mutex_lock(mutex);
+
+      if (active) {
+        // count me out
+        running_threads--;
+        active = false;
+      }
+
+      if (!event_queue.empty()) {
+        e = event_queue.front();
+        event_queue.pop();
+        // count me back in
+        running_threads++;
+        active = true;
+      } else {
+        if (running_threads == 0) {
+          // we are done
+          break;
+        }
+      }
+    }
+
+    if (e != NULL) {
+      // restart transaction until it is successfully committed
+      v8::internal::Transaction* transaction = NULL;
+      while (true) {
+        transaction = stm->StartTransaction();
+
+        HandleScope handle_scope;
+        e->Execute();
+
+        if (stm->CommitTransaction(transaction)) {
+          break; // while(true)
+        } else {
+          v8::internal::Barrier_AtomicIncrement(&aborted_transactions, 1);
+        }
+      }
+      delete e;
+    }
+  }
+}
+
 class WorkerThread : public v8::internal::Thread {
   Persistent<Context> context_;
   Isolate* isolate_;
@@ -104,63 +154,8 @@ public:
     // enter context
     Context::Scope context_scope(context_);
 
-    bool active = true;
-    v8::internal::Barrier_AtomicIncrement(&running_threads, 1);
-
-    // loop until queue is empty and others are idle too
-    while (true) {
-      Event* e = NULL;
-      {
-        v8::internal::ScopedLock mutex_lock(mutex);
-
-        if (active) {
-          // count me out
-          running_threads--;
-          active = false;
-        }
-
-        if (!event_queue.empty()) {
-          e = event_queue.front();
-          event_queue.pop();
-          // count me back in
-          running_threads++;
-          active = true;
-        } else {
-          if (running_threads == 0) {
-            // we are done
-            break;
-          }
-        }
-      }
-
-      if (e != NULL) {
-        HandleScope handle_scope;
-        e->Execute();
-
-        /*
-        // restart transaction until it is successfully committed
-        v8::internal::Transaction* transaction = NULL;
-        v8::internal::Isolate* isolate =
-          reinterpret_cast<v8::internal::Isolate*>(isolate_);
-        while (true) {
-          transaction = isolate->stm()->StartTransaction();
-
-          HandleScope handle_scope;
-          e->Execute();
-
-          if (isolate->stm()->CommitTransaction(transaction)) {
-            // printf("[%s] Comitted.\n", name());
-            break;
-          } else {
-            // printf("[%s] Aborted.\n", name());
-            v8::internal::Barrier_AtomicIncrement(
-              &aborted_transactions, 1);
-          }
-        }
-        */
-        delete e;
-      }
-    }
+    // run event loop
+    EventLoop(reinterpret_cast<v8::internal::Isolate*>(isolate_)->stm());
   }
 };
 
@@ -222,17 +217,22 @@ int main(int argc, char **argv) {
   // load and run the script
   Script::New(ReadFile(filename), String::New(filename))->Run();
 
-  // run event loops in worker threads
+  // run event loops in worker threads (less the loop running in main thread)
   WorkerThread* thread[MAX_THREADS];
-  for (int i = 0; i < threads; i++) {
+  for (int i = 0; i < threads-1; i++) {
     char name[100];
-    sprintf(name, "Worker %d", i);
+    sprintf(name, "Worker %d", i+1);
     thread[i] = new WorkerThread(name, context);
     thread[i]->Start();
   }
 
+  // run event loop in main thread too
+  v8::internal::Thread::SetThreadLocal(thread_name_key, "Worker 0");
+  Isolate* isolate = Isolate::GetCurrent();
+  EventLoop(reinterpret_cast<v8::internal::Isolate*>(isolate)->stm());
+
   // stop when all threads are idle and the event queue is empty
-  for (int i = 0; i < threads; i++) {
+  for (int i = 0; i < threads-1; i++) {
     thread[i]->Join();
   }
 
