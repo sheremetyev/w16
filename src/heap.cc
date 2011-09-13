@@ -6294,4 +6294,21 @@ void ExternalStringTable::TearDown() {
 }
 
 
+AllocationScope::AllocationScope() {
+  HEAP->isolate()->stm()->EnterAllocationScope();
+}
+
+AllocationScope::~AllocationScope() {
+  HEAP->isolate()->stm()->LeaveAllocationScope();
+}
+
+
+CollectionScope::CollectionScope() {
+  HEAP->isolate()->stm()->EnterCollectionScope();
+}
+
+CollectionScope::~CollectionScope() {
+  HEAP->isolate()->stm()->LeaveCollectionScope();
+}
+
 } }  // namespace v8::internal

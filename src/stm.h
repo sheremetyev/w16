@@ -7,10 +7,17 @@ namespace v8 {
 namespace internal {
 
 class STM {
-public:
+ public:
+  void EnterAllocationScope();
+  void LeaveAllocationScope();
 
-private:
+  void EnterCollectionScope();
+  void LeaveCollectionScope();
+
+ private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(STM);
+
+  Mutex* heap_mutex_;
 
   Isolate* isolate_;
 

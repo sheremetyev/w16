@@ -37,6 +37,24 @@
 namespace v8 {
 namespace internal {
 
+
+class AllocationScope {
+ public:
+  explicit AllocationScope();
+  ~AllocationScope();
+ private:
+  DISALLOW_COPY_AND_ASSIGN(AllocationScope);
+};
+
+class CollectionScope {
+ public:
+  explicit CollectionScope();
+  ~CollectionScope();
+ private:
+  DISALLOW_COPY_AND_ASSIGN(CollectionScope);
+};
+
+
 void PromotionQueue::insert(HeapObject* target, int size) {
   *(--rear_) = reinterpret_cast<intptr_t>(target);
   *(--rear_) = size;
