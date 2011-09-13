@@ -220,10 +220,10 @@ int main(int argc, char **argv) {
   // enter the context for compiling and running the script
   Context::Scope context_scope(context);
 
+  int64_t start_time = v8::internal::OS::Ticks();
+
   // load and run the script
   Script::New(ReadFile(filename), String::New(filename))->Run();
-
-  int64_t start_time = v8::internal::OS::Ticks();
 
   // run event loops in worker threads
   WorkerThread* thread[MAX_THREADS];
