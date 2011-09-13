@@ -14,6 +14,9 @@ class STM {
   void EnterCollectionScope();
   void LeaveCollectionScope();
 
+  Handle<Object> RedirectLoad(const Handle<Object>& obj);
+  Handle<Object> RedirectStore(const Handle<Object>& obj);
+
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(STM);
 

@@ -24,4 +24,12 @@ void STM::LeaveCollectionScope() {
   heap_mutex_->Unlock();
 }
 
+Handle<Object> STM::RedirectLoad(const Handle<Object>& obj) {
+  return obj;
+}
+
+Handle<Object> STM::RedirectStore(const Handle<Object>& obj) {
+  return obj;
+}
+
 } } // namespace v8::internal
