@@ -478,6 +478,8 @@ void Heap::CollectAllAvailableGarbage() {
 
 
 bool Heap::CollectGarbage(AllocationSpace space, GarbageCollector collector) {
+  CollectionScope collection_scope;
+
   // The VM is in the GC state until exiting this function.
   VMState state(isolate_, GC);
 
@@ -517,6 +519,7 @@ bool Heap::CollectGarbage(AllocationSpace space, GarbageCollector collector) {
 
 
 void Heap::PerformScavenge() {
+  UNREACHABLE();
   GCTracer tracer(this);
   PerformGarbageCollection(SCAVENGER, &tracer);
 }
