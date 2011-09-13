@@ -21,6 +21,15 @@ Handle<String> ReadFile(const char* filename) {
   return String::New(str.c_str());
 }
 
+// JavaScript function load(filename)
+Handle<Value> Load(const Arguments& args)
+{
+  HandleScope handle_scope;
+  String::Utf8Value filename(args[0]);
+  Script::New(ReadFile(*filename), args[0])->Run();
+  return Undefined();
+}
+
 // JavaScript function print(value,...)
 Handle<Value> Print(const Arguments& args)
 {
@@ -200,6 +209,7 @@ int main(int argc, char **argv) {
 
   // create a template for the global object and set built-ins
   Handle<ObjectTemplate> global = ObjectTemplate::New();
+  global->Set(String::New("load"),  FunctionTemplate::New(Load));
   global->Set(String::New("async"), FunctionTemplate::New(Async));
   global->Set(String::New("print"), FunctionTemplate::New(Print));
   global->Set(String::New("PARAM"), Integer::New(param));
