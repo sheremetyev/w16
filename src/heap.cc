@@ -84,7 +84,7 @@ Heap::Heap()
       max_executable_size_(256*MB),
       code_range_size_(512*MB),
 #else
-      reserved_semispace_size_(8*MB),
+      reserved_semispace_size_(128*MB),
       max_semispace_size_(8*MB),
       initial_semispace_size_(512*KB),
       max_old_generation_size_(700*MB),

@@ -162,7 +162,7 @@ int main(int argc, char **argv) {
   // disable V8 optimisations
   char flags[1024] = { 0 };
   strcat(flags, " --trace-gc"); // print one trace line following each garbage collection
-  strcat(flags, " --gc-interval=1000"); // garbage collect after <n> allocations
+  //strcat(flags, " --gc-interval=1000"); // garbage collect after <n> allocations
   strcat(flags, " --nouse-ic"); // disable inline caching
   V8::SetFlagsFromString(flags, strlen(flags));
 
