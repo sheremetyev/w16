@@ -69,6 +69,7 @@ struct Event {
 
 std::queue<Event*> event_queue;
 v8::internal::Atomic32 running_threads = 0;
+v8::internal::Atomic32 total_transactions = 0;
 v8::internal::Atomic32 aborted_transactions = 0;
 v8::internal::Mutex* mutex = v8::internal::OS::CreateMutex();
 
@@ -119,6 +120,7 @@ void EventLoop(v8::internal::STM* stm) {
       // restart transaction until it is successfully committed
       while (true) {
         stm->StartTransaction();
+        v8::internal::NoBarrier_AtomicIncrement(&total_transactions, 1);
 
         HandleScope handle_scope;
         e->Execute();
@@ -126,7 +128,7 @@ void EventLoop(v8::internal::STM* stm) {
         if (stm->CommitTransaction()) {
           break; // while(true)
         } else {
-          v8::internal::Barrier_AtomicIncrement(&aborted_transactions, 1);
+          v8::internal::NoBarrier_AtomicIncrement(&aborted_transactions, 1);
         }
       }
       delete e;
@@ -228,8 +230,8 @@ int main(int argc, char **argv) {
 
   int64_t stop_time = v8::internal::OS::Ticks();
   int milliseconds = static_cast<int>(stop_time - start_time) / 1000;
-  printf("%d threads, %d ms, %d aborts\n",
-    threads, milliseconds, aborted_transactions);
+  printf("%d threads, %d ms, %d transactions, %d aborts\n",
+    threads, milliseconds, total_transactions, aborted_transactions);
 
   // dispose the persistent context
   context.Dispose();
