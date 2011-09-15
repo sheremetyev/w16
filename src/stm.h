@@ -6,6 +6,8 @@
 namespace v8 {
 namespace internal {
 
+class Transaction;
+
 class STM {
  public:
   void EnterAllocationScope();
@@ -14,8 +16,8 @@ class STM {
   void EnterCollectionScope();
   void LeaveCollectionScope();
 
-  Handle<Object> RedirectLoad(const Handle<Object>& obj);
-  Handle<Object> RedirectStore(const Handle<Object>& obj);
+  Handle<Object> RedirectLoad(Handle<Object> obj);
+  Handle<Object> RedirectStore(Handle<Object> obj);
 
   void StartTransaction();
   bool CommitTransaction();
@@ -23,7 +25,12 @@ class STM {
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(STM);
 
+  // TODO: specify order of lock acquisition
   Mutex* heap_mutex_;
+  Mutex* commit_mutex_;
+  Mutex* transactions_mutex_;
+
+  List<Transaction*> transactions_;
 
   Isolate* isolate_;
 
