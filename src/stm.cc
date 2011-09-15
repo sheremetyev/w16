@@ -283,7 +283,11 @@ class Transaction {
     JSObject* copy;
     { JSObject* jsObj = JSObject::cast(*obj);
       MaybeObject* maybe_result = isolate_->heap()->CopyJSObject(jsObj);
-      if (!maybe_result->To<JSObject>(&copy)) return Handle<Object>();
+      if (!maybe_result->To<JSObject>(&copy)) {
+        // TODO: perform GC and retry
+        *terminate = true;
+        return obj;
+      }
     }
 
     // include it in write set and return
