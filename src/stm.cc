@@ -79,6 +79,7 @@ class CellMap {
   Object** AddMapping(Object* object, Object* redirect) {
     if (*last_block_address_ == NULL) {
       *last_block_address_ = (Block*)malloc(sizeof(Block));
+      (*last_block_address_)->next_ = NULL;
       index_ = 0;
     }
 
@@ -91,7 +92,6 @@ class CellMap {
     // block is full
     if (index_ == BLOCK_SIZE) {
       last_block_address_ = &(*last_block_address_)->next_;
-      *last_block_address_ = NULL;
     }
 
     return &pair.to_;
