@@ -18,7 +18,7 @@ class WriteSet {
   }
 
   Handle<Object> Add(Handle<Object> obj, Object* redirect) {
-    return Handle<Object>();
+    return Handle<Object>::null();
   }
 
   void CommitChanges(Heap* heap) {
@@ -44,7 +44,7 @@ class ReadSet {
   }
 
   Handle<Object> Add(Handle<Object> obj) {
-    return Handle<Object>();
+    return Handle<Object>::null();
   }
 
   bool Intersects(const WriteSet& other) {
@@ -66,25 +66,25 @@ class Transaction {
   }
 
   Handle<Object> RedirectLoad(Handle<Object> obj) {
-    ASSERT_NOT_NULL(*obj);
+    ASSERT(!obj.is_null());
 
     if (!obj->IsJSObject()) {
       return obj;
     }
 
-    // if aborted return NULL to terminate current transaction
+    // if aborted return null handle to terminate current transaction
     if (aborted_) {
-      return Handle<Object>();
+      return Handle<Object>::null();
     }
 
     // lookup in write set and redirect if included
     Handle<Object> redirect = write_set_.Get(obj);
-    if (*redirect != NULL)
+    if (!redirect.is_null())
       return redirect;
 
     // lookup in read set and return if included
     redirect = read_set_.Get(obj);
-    if (*redirect != NULL)
+    if (!redirect.is_null())
       return redirect;
 
     // include in read set and return
@@ -93,19 +93,19 @@ class Transaction {
   }
 
   Handle<Object> RedirectStore(Handle<Object> obj) {
-    ASSERT_NOT_NULL(*obj);
+    ASSERT(!obj.is_null());
 
     if (!obj->IsJSObject())
       return obj;
 
     // if aborted return NULL to terminate current transaction
     if (aborted_) {
-      return Handle<Object>();
+      return Handle<Object>::null();
     }
 
     // lookup in write set and return if included
     Handle<Object> redirect = write_set_.Get(obj);
-    if (*redirect != NULL) {
+    if (!redirect.is_null()) {
       return redirect;
     }
 
