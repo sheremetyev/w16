@@ -810,6 +810,9 @@ class Isolate {
   DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
   ThreadLocalTop* thread_local_top() { return &thread_local_top_; }
 
+  Transaction* get_transaction() const { return transation_; }
+  void set_transaction(Transaction* transaction) { transation_ = transaction; }
+
   TranscendentalCache* transcendental_cache() const {
     return transcendental_cache_;
   }
@@ -1112,6 +1115,7 @@ class Isolate {
   Mutex* debugger_access_;
   Heap heap_;
   STM stm_;
+  Transaction* transation_;
   Logger* logger_;
   StackGuard stack_guard_;
   StatsTable* stats_table_;
