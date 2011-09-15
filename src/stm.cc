@@ -285,6 +285,7 @@ class Transaction {
       MaybeObject* maybe_result = isolate_->heap()->CopyJSObject(jsObj);
       if (!maybe_result->To<JSObject>(&copy)) {
         // TODO: perform GC and retry
+        aborted_ = true;
         *terminate = true;
         return obj;
       }
