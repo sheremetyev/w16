@@ -16,8 +16,8 @@ class STM {
   void EnterCollectionScope();
   void LeaveCollectionScope();
 
-  Handle<Object> RedirectLoad(Handle<Object> obj);
-  Handle<Object> RedirectStore(Handle<Object> obj);
+  Handle<Object> RedirectLoad(Handle<Object> obj, bool* terminate);
+  Handle<Object> RedirectStore(Handle<Object> obj, bool* terminate);
 
   void StartTransaction();
   bool CommitTransaction();

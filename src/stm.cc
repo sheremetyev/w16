@@ -65,16 +65,16 @@ class Transaction {
     write_set_.Iterate(v);
   }
 
-  Handle<Object> RedirectLoad(Handle<Object> obj) {
+  Handle<Object> RedirectLoad(Handle<Object> obj, bool* terminate) {
     ASSERT(!obj.is_null());
 
     if (!obj->IsJSObject()) {
       return obj;
     }
 
-    // if aborted return null handle to terminate current transaction
     if (aborted_) {
-      return Handle<Object>::null();
+      *terminate = true;
+      return obj;
     }
 
     // lookup in write set and redirect if included
@@ -92,15 +92,15 @@ class Transaction {
     return read_set_.Add(obj);
   }
 
-  Handle<Object> RedirectStore(Handle<Object> obj) {
+  Handle<Object> RedirectStore(Handle<Object> obj, bool* terminate) {
     ASSERT(!obj.is_null());
 
     if (!obj->IsJSObject())
       return obj;
 
-    // if aborted return NULL to terminate current transaction
     if (aborted_) {
-      return Handle<Object>::null();
+      *terminate = true;
+      return obj;
     }
 
     // lookup in write set and return if included
@@ -178,22 +178,22 @@ void STM::LeaveCollectionScope() {
   heap_mutex_->Unlock();
 }
 
-Handle<Object> STM::RedirectLoad(Handle<Object> obj) {
+Handle<Object> STM::RedirectLoad(Handle<Object> obj, bool* terminate) {
   Transaction* trans = isolate_->get_transaction();
   if (trans == NULL) {
     return obj;
   }
 
-  return trans->RedirectLoad(obj);
+  return trans->RedirectLoad(obj, terminate);
 }
 
-Handle<Object> STM::RedirectStore(Handle<Object> obj) {
+Handle<Object> STM::RedirectStore(Handle<Object> obj, bool* terminate) {
   Transaction* trans = isolate_->get_transaction();
   if (trans == NULL) {
     return obj;
   }
 
-  return trans->RedirectStore(obj);
+  return trans->RedirectStore(obj, terminate);
 }
 
 void STM::StartTransaction() {
