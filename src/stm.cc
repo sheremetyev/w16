@@ -280,20 +280,25 @@ class Transaction {
     }
 
     // make a copy
-    JSObject* copy;
-    { JSObject* jsObj = JSObject::cast(*obj);
-      MaybeObject* maybe_result = isolate_->heap()->CopyJSObject(jsObj);
-      if (!maybe_result->To<JSObject>(&copy)) {
-        // TODO: perform GC and retry
-        aborted_ = true;
-        *terminate = true;
-        return obj;
-      }
+    JSObject* copy = CreateCopy(*obj);
+    if (copy == NULL) {
+      FATAL("Cannot create object copy");
+      aborted_ = true;
+      *terminate = true;
+      return obj;
     }
 
     // include it in write set and return
     ScopedLock lock(mutex_);
     return write_set_.Add(obj, copy);
+  }
+
+  JSObject* CreateCopy(Object* obj) {
+    JSObject* jsObj = JSObject::cast(obj);
+    CALL_AND_RETRY(isolate_,
+      isolate_->heap()->CopyJSObject(jsObj),
+      return JSObject::cast(__object__),
+      return NULL);
   }
 
   void CommitHeap() {
