@@ -34,14 +34,14 @@ function searchPrimes(first, last) {
         local_count++;
     }
     var global_count = inc_primes(local_count);
-    if (inc_processed(last - first) == LAST - FIRST)
+    if (inc_processed(last - first) >= LAST - FIRST)
       print(global_count + " primes.");
   }
 };
 
 var FIRST = 2;
 var LAST = 1000000;
-var BATCH = 1000;
+var BATCH = 100000;
 
 for (var i = FIRST; i < LAST; i += BATCH) {
   var first = i;
