@@ -455,6 +455,7 @@ MaybeObject* CallICBase::LoadFunction(State state,
                                       Handle<Object> objectGiven,
                                       Handle<String> name) {
   Handle<Object> object = isolate()->stm()->RedirectLoad(objectGiven);
+  if (*object == NULL) return isolate()->TerminateExecution();
 
   // If the object is undefined or null it's illegal to try to get any
   // of its properties; throw a TypeError in that case.
@@ -776,7 +777,9 @@ MaybeObject* KeyedCallIC::LoadFunction(State state,
                                        Handle<Object> objectGiven,
                                        Handle<Object> keyGiven) {
   Handle<Object> object = isolate()->stm()->RedirectLoad(objectGiven);
+  if (*object == NULL) return isolate()->TerminateExecution();
   Handle<Object> key = isolate()->stm()->RedirectLoad(keyGiven);
+  if (*key == NULL) return isolate()->TerminateExecution();
 
   if (key->IsSymbol()) {
     return CallICBase::LoadFunction(state,
@@ -839,6 +842,7 @@ MaybeObject* LoadIC::Load(State state,
                           Handle<Object> objectGiven,
                           Handle<String> name) {
   Handle<Object> object = isolate()->stm()->RedirectLoad(objectGiven);
+  if (*object == NULL) return isolate()->TerminateExecution();
 
   // If the object is undefined or null it's illegal to try to get any
   // of its properties; throw a TypeError in that case.
@@ -1113,7 +1117,9 @@ MaybeObject* KeyedLoadIC::Load(State state,
                                Handle<Object> keyGiven,
                                bool force_generic_stub) {
   Handle<Object> object = isolate()->stm()->RedirectLoad(objectGiven);
+  if (*object == NULL) return isolate()->TerminateExecution();
   Handle<Object> key = isolate()->stm()->RedirectLoad(keyGiven);
+  if (*key == NULL) return isolate()->TerminateExecution();
 
   // Check for values that can be converted into a symbol.
   // TODO(1295): Remove this code.
@@ -1387,7 +1393,9 @@ MaybeObject* StoreIC::Store(State state,
                             Handle<String> name,
                             Handle<Object> valueGiven) {
   Handle<Object> object = isolate()->stm()->RedirectStore(objectGiven);
+  if (*object == NULL) return isolate()->TerminateExecution();
   Handle<Object> value = isolate()->stm()->RedirectStore(valueGiven);
+  if (*value == NULL) return isolate()->TerminateExecution();
 
   // If the object is undefined or null it's illegal to try to set any
   // properties on it; throw a TypeError in that case.
@@ -1748,8 +1756,11 @@ MaybeObject* KeyedStoreIC::Store(State state,
                                  Handle<Object> valueGiven,
                                  bool force_generic) {
   Handle<Object> object = isolate()->stm()->RedirectStore(objectGiven);
+  if (*object == NULL) return isolate()->TerminateExecution();
   Handle<Object> key = isolate()->stm()->RedirectStore(keyGiven);
+  if (*key == NULL) return isolate()->TerminateExecution();
   Handle<Object> value = isolate()->stm()->RedirectStore(valueGiven);
+  if (*value == NULL) return isolate()->TerminateExecution();
 
   if (key->IsSymbol()) {
     Handle<String> name = Handle<String>::cast(key);
