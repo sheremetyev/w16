@@ -1386,6 +1386,7 @@ Isolate::Isolate()
       debugger_initialized_(false),
       // Must be initialized early to allow v8::Debug calls.
       debugger_access_(OS::CreateMutex()),
+      transaction_(NULL),
       logger_(NULL),
       stats_table_(NULL),
       stub_cache_(NULL),
