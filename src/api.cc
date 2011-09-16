@@ -47,7 +47,6 @@
 #include "scanner-character-streams.h"
 #include "serialize.h"
 #include "snapshot.h"
-#include "v8threads.h"
 #include "version.h"
 #include "vm-state-inl.h"
 
@@ -96,14 +95,7 @@ namespace v8 {
   } while (false)
 
 
-#define API_ENTRY_CHECK(isolate, msg)                                          \
-  do {                                                                         \
-    if (v8::Locker::IsActive()) {                                              \
-      ApiCheck(isolate->thread_manager()->IsLockedByCurrentThread(),           \
-               msg,                                                            \
-               "Entering the V8 API without proper locking in place");         \
-    }                                                                          \
-  } while (false)
+#define API_ENTRY_CHECK(isolate, msg)
 
 
 // --- E x c e p t i o n   B e h a v i o r ---
@@ -5039,11 +5031,8 @@ void V8::TerminateExecution(int thread_id) {
   // execution right away.  Otherwise, ask the thread manager to
   // terminate the thread with the given id if any.
   i::ThreadId internal_tid = i::ThreadId::FromInteger(thread_id);
-  if (isolate->thread_id().Equals(internal_tid)) {
-    isolate->stack_guard()->TerminateExecution();
-  } else {
-    isolate->thread_manager()->TerminateExecution(internal_tid);
-  }
+  ASSERT(isolate->thread_id().Equals(internal_tid));
+  isolate->stack_guard()->TerminateExecution();
 }
 
 
@@ -6008,36 +5997,6 @@ void Testing::DeoptimizeAll() {
 namespace internal {
 
 
-void HandleScopeImplementer::FreeThreadResources() {
-  Free();
-}
-
-
-char* HandleScopeImplementer::ArchiveThread(char* storage) {
-  v8::ImplementationUtilities::HandleScopeData* current =
-      isolate_->handle_scope_data();
-  handle_scope_data_ = *current;
-  memcpy(storage, this, sizeof(*this));
-
-  ResetAfterArchive();
-  current->Initialize();
-
-  return storage + ArchiveSpacePerThread();
-}
-
-
-int HandleScopeImplementer::ArchiveSpacePerThread() {
-  return sizeof(HandleScopeImplementer);
-}
-
-
-char* HandleScopeImplementer::RestoreThread(char* storage) {
-  memcpy(this, storage, sizeof(*this));
-  *isolate_->handle_scope_data() = handle_scope_data_;
-  return storage + ArchiveSpacePerThread();
-}
-
-
 void HandleScopeImplementer::IterateThis(ObjectVisitor* v) {
   // Iterate over all handles in the blocks except for the last.
   for (int i = blocks()->length() - 2; i >= 0; --i) {
@@ -6064,12 +6023,5 @@ void HandleScopeImplementer::Iterate(ObjectVisitor* v) {
   IterateThis(v);
 }
 
-
-char* HandleScopeImplementer::Iterate(ObjectVisitor* v, char* storage) {
-  HandleScopeImplementer* scope_implementer =
-      reinterpret_cast<HandleScopeImplementer*>(storage);
-  scope_implementer->IterateThis(v);
-  return storage + ArchiveSpacePerThread();
-}
 
 } }  // namespace v8::internal

@@ -82,14 +82,6 @@ class RegExpStack {
   // If passing zero, the default/minimum size buffer is allocated.
   Address EnsureCapacity(size_t size);
 
-  // Thread local archiving.
-  static int ArchiveSpacePerThread() {
-    return static_cast<int>(sizeof(ThreadLocal));
-  }
-  char* ArchiveStack(char* to);
-  char* RestoreStack(char* from);
-  void FreeThreadResources() { thread_local_.Free(); }
-
  private:
   RegExpStack();
   ~RegExpStack();

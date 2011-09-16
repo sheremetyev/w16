@@ -43,7 +43,6 @@
 #include "runtime-profiler.h"
 #include "scopeinfo.h"
 #include "snapshot.h"
-#include "v8threads.h"
 #include "vm-state-inl.h"
 #if V8_TARGET_ARCH_ARM && !V8_INTERPRETED_REGEXP
 #include "regexp-macro-assembler.h"
@@ -4978,10 +4977,6 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
       break;
   }
   v->Synchronize("globalhandles");
-
-  // Iterate over pointers being held by inactive threads.
-  isolate_->thread_manager()->Iterate(v);
-  v->Synchronize("threadmanager");
 
   isolate_->stm()->Iterate(v);
   v->Synchronize("stm");

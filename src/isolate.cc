@@ -414,12 +414,6 @@ void Isolate::EnterDefaultIsolate() {
 }
 
 
-Isolate* Isolate::GetDefaultIsolateForLocking() {
-  EnsureDefaultIsolate();
-  return default_isolate_;
-}
-
-
 Address Isolate::get_address_from_id(Isolate::AddressId id) {
   return isolate_addresses_[id];
 }
@@ -429,17 +423,6 @@ char* Isolate::Iterate(ObjectVisitor* v, char* thread_storage) {
   ThreadLocalTop* thread = reinterpret_cast<ThreadLocalTop*>(thread_storage);
   Iterate(v, thread);
   return thread_storage + sizeof(ThreadLocalTop);
-}
-
-
-void Isolate::IterateThread(ThreadVisitor* v) {
-  v->VisitThread(this, thread_local_top());
-}
-
-
-void Isolate::IterateThread(ThreadVisitor* v, char* t) {
-  ThreadLocalTop* thread = reinterpret_cast<ThreadLocalTop*>(t);
-  v->VisitThread(this, thread);
 }
 
 
@@ -1277,37 +1260,6 @@ Handle<Context> Isolate::GetCallingGlobalContext() {
 }
 
 
-char* Isolate::ArchiveThread(char* to) {
-  if (RuntimeProfiler::IsEnabled() && current_vm_state() == JS) {
-    RuntimeProfiler::IsolateExitedJS(this);
-  }
-  memcpy(to, reinterpret_cast<char*>(thread_local_top()),
-         sizeof(ThreadLocalTop));
-  InitializeThreadLocal();
-  return to + sizeof(ThreadLocalTop);
-}
-
-
-char* Isolate::RestoreThread(char* from) {
-  memcpy(reinterpret_cast<char*>(thread_local_top()), from,
-         sizeof(ThreadLocalTop));
-  // This might be just paranoia, but it seems to be needed in case a
-  // thread_local_top_ is restored on a separate OS thread.
-#ifdef USE_SIMULATOR
-#ifdef V8_TARGET_ARCH_ARM
-  thread_local_top()->simulator_ = Simulator::current(this);
-#elif V8_TARGET_ARCH_MIPS
-  thread_local_top()->simulator_ = Simulator::current(this);
-#endif
-#endif
-  if (RuntimeProfiler::IsEnabled() && current_vm_state() == JS) {
-    RuntimeProfiler::IsolateEnteredJS(this);
-  }
-  ASSERT(context() == NULL || context()->IsContext());
-  return from + sizeof(ThreadLocalTop);
-}
-
-
 Isolate::ThreadDataTable::ThreadDataTable()
     : list_(NULL) {
 }
@@ -1407,8 +1359,6 @@ Isolate::Isolate()
       pc_to_code_cache_(NULL),
       write_input_buffer_(NULL),
       global_handles_(NULL),
-      context_switcher_(NULL),
-      thread_manager_(NULL),
       string_tracker_(NULL),
       regexp_stack_(NULL),
       embedder_data_(NULL) {
@@ -1421,11 +1371,6 @@ Isolate::Isolate()
   stm_.isolate_ = this;
   zone_.isolate_ = this;
   stack_guard_.isolate_ = this;
-
-  // ThreadManager is initialized early to support locking an isolate
-  // before it is entered.
-  thread_manager_ = new ThreadManager();
-  thread_manager_->isolate_ = this;
 
 #if defined(V8_TARGET_ARCH_ARM) && !defined(__arm__) || \
     defined(V8_TARGET_ARCH_MIPS) && !defined(__mips__)
@@ -1496,10 +1441,6 @@ void Isolate::Deinit() {
 
     delete deoptimizer_data_;
     deoptimizer_data_ = NULL;
-    if (FLAG_preemption) {
-      v8::Locker locker;
-      v8::Locker::StopPreemption();
-    }
     builtins_.TearDown();
     bootstrapper_->TearDown();
 
@@ -1581,11 +1522,6 @@ Isolate::~Isolate() {
   pc_to_code_cache_ = NULL;
   delete write_input_buffer_;
   write_input_buffer_ = NULL;
-
-  delete context_switcher_;
-  context_switcher_ = NULL;
-  delete thread_manager_;
-  thread_manager_ = NULL;
 
   delete string_tracker_;
   string_tracker_ = NULL;
@@ -1754,11 +1690,6 @@ bool Isolate::Init(Deserializer* des) {
             preallocated_memory_thread_->data(),
             preallocated_memory_thread_->length());
     PreallocatedStorageInit(preallocated_memory_thread_->length() / 4);
-  }
-
-  if (FLAG_preemption) {
-    v8::Locker locker;
-    v8::Locker::StartPreemption(100);
   }
 
 #ifdef ENABLE_DEBUGGER_SUPPORT

@@ -554,32 +554,6 @@ void Debug::ThreadInit() {
 }
 
 
-char* Debug::ArchiveDebug(char* storage) {
-  char* to = storage;
-  memcpy(to, reinterpret_cast<char*>(&thread_local_), sizeof(ThreadLocal));
-  to += sizeof(ThreadLocal);
-  memcpy(to, reinterpret_cast<char*>(&registers_), sizeof(registers_));
-  ThreadInit();
-  ASSERT(to <= storage + ArchiveSpacePerThread());
-  return storage + ArchiveSpacePerThread();
-}
-
-
-char* Debug::RestoreDebug(char* storage) {
-  char* from = storage;
-  memcpy(reinterpret_cast<char*>(&thread_local_), from, sizeof(ThreadLocal));
-  from += sizeof(ThreadLocal);
-  memcpy(reinterpret_cast<char*>(&registers_), from, sizeof(registers_));
-  ASSERT(from <= storage + ArchiveSpacePerThread());
-  return storage + ArchiveSpacePerThread();
-}
-
-
-int Debug::ArchiveSpacePerThread() {
-  return sizeof(ThreadLocal) + sizeof(JSCallerSavedBuffer);
-}
-
-
 // Frame structure (conforms InternalFrame structure):
 //   -- code
 //   -- SMI maker
@@ -3222,7 +3196,7 @@ void MessageDispatchHelperThread::Run() {
       already_signalled_ = false;
     }
     {
-      Locker locker;
+      // TODO(w16): should lock Isolate?
       Isolate::Current()->debugger()->CallMessageDispatchHandler();
     }
   }

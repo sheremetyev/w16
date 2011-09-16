@@ -55,7 +55,6 @@
 #include "smart-array-pointer.h"
 #include "string-search.h"
 #include "stub-cache.h"
-#include "v8threads.h"
 #include "vm-state-inl.h"
 
 namespace v8 {
@@ -11238,17 +11237,10 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_GetThreadCount) {
     if (!maybe_result->ToObject(&result)) return maybe_result;
   }
 
-  // Count all archived V8 threads.
-  int n = 0;
-  for (ThreadState* thread =
-          isolate->thread_manager()->FirstThreadStateInUse();
-       thread != NULL;
-       thread = thread->Next()) {
-    n++;
-  }
+  // TODO(w16): count concurrent threads?
 
   // Total number of threads is current thread and archived threads.
-  return Smi::FromInt(n + 1);
+  return Smi::FromInt(1);
 }
 
 
@@ -11287,23 +11279,8 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_GetThreadDetails) {
     details->set(kThreadDetailsThreadIdIndex,
                  Smi::FromInt(ThreadId::Current().ToInteger()));
   } else {
-    // Find the thread with the requested index.
-    int n = 1;
-    ThreadState* thread =
-        isolate->thread_manager()->FirstThreadStateInUse();
-    while (index != n && thread != NULL) {
-      thread = thread->Next();
-      n++;
-    }
-    if (thread == NULL) {
-      return isolate->heap()->undefined_value();
-    }
-
-    // Fill the details.
-    details->set(kThreadDetailsCurrentThreadIndex,
-                 isolate->heap()->false_value());
-    details->set(kThreadDetailsThreadIdIndex,
-                 Smi::FromInt(thread->id().ToInteger()));
+    // TODO(w16): get concurrent thread info?
+    return isolate->heap()->undefined_value();
   }
 
   // Convert to JS array and return.

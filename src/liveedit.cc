@@ -1657,31 +1657,6 @@ static const char* DropActivationsInActiveThread(
 }
 
 
-class InactiveThreadActivationsChecker : public ThreadVisitor {
- public:
-  InactiveThreadActivationsChecker(Handle<JSArray> shared_info_array,
-                                   Handle<JSArray> result)
-      : shared_info_array_(shared_info_array), result_(result),
-        has_blocked_functions_(false) {
-  }
-  void VisitThread(Isolate* isolate, ThreadLocalTop* top) {
-    for (StackFrameIterator it(isolate, top); !it.done(); it.Advance()) {
-      has_blocked_functions_ |= CheckActivation(
-          shared_info_array_, result_, it.frame(),
-          LiveEdit::FUNCTION_BLOCKED_ON_OTHER_STACK);
-    }
-  }
-  bool HasBlockedFunctions() {
-    return has_blocked_functions_;
-  }
-
- private:
-  Handle<JSArray> shared_info_array_;
-  Handle<JSArray> result_;
-  bool has_blocked_functions_;
-};
-
-
 Handle<JSArray> LiveEdit::CheckAndDropActivations(
     Handle<JSArray> shared_info_array, bool do_drop) {
   int len = Smi::cast(shared_info_array->length())->value();
@@ -1694,16 +1669,6 @@ Handle<JSArray> LiveEdit::CheckAndDropActivations(
         result,
         i,
         Handle<Smi>(Smi::FromInt(FUNCTION_AVAILABLE_FOR_PATCH)));
-  }
-
-
-  // First check inactive threads. Fail if some functions are blocked there.
-  InactiveThreadActivationsChecker inactive_threads_checker(shared_info_array,
-                                                            result);
-  Isolate::Current()->thread_manager()->IterateArchivedThreads(
-      &inactive_threads_checker);
-  if (inactive_threads_checker.HasBlockedFunctions()) {
-    return result;
   }
 
   // Try to drop activations from the current stack.

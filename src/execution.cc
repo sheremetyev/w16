@@ -35,7 +35,6 @@
 #include "debug.h"
 #include "runtime-profiler.h"
 #include "simulator.h"
-#include "v8threads.h"
 #include "vm-state-inl.h"
 
 namespace v8 {
@@ -471,38 +470,6 @@ void StackGuard::Continue(InterruptFlag after_what) {
 }
 
 
-char* StackGuard::ArchiveStackGuard(char* to) {
-  ExecutionAccess access(isolate_);
-  memcpy(to, reinterpret_cast<char*>(&thread_local_), sizeof(ThreadLocal));
-  ThreadLocal blank;
-
-  // Set the stack limits using the old thread_local_.
-  // TODO(isolates): This was the old semantics of constructing a ThreadLocal
-  //                 (as the ctor called SetStackLimits, which looked at the
-  //                 current thread_local_ from StackGuard)-- but is this
-  //                 really what was intended?
-  isolate_->heap()->SetStackLimits();
-  thread_local_ = blank;
-
-  return to + sizeof(ThreadLocal);
-}
-
-
-char* StackGuard::RestoreStackGuard(char* from) {
-  ExecutionAccess access(isolate_);
-  memcpy(reinterpret_cast<char*>(&thread_local_), from, sizeof(ThreadLocal));
-  isolate_->heap()->SetStackLimits();
-  return from + sizeof(ThreadLocal);
-}
-
-
-void StackGuard::FreeThreadResources() {
-  Isolate::PerIsolateThreadData* per_thread =
-      isolate_->FindOrAllocatePerThreadDataForThisThread();
-  per_thread->set_stack_limit(thread_local_.real_climit_);
-}
-
-
 void StackGuard::ThreadLocal::Clear() {
   real_jslimit_ = kIllegalLimit;
   jslimit_ = kIllegalLimit;
@@ -753,36 +720,6 @@ Handle<String> Execution::GetStackTraceLine(Handle<Object> recv,
 }
 
 
-static Object* RuntimePreempt() {
-  Isolate* isolate = Isolate::Current();
-
-  // Clear the preempt request flag.
-  isolate->stack_guard()->Continue(PREEMPT);
-
-  ContextSwitcher::PreemptionReceived();
-
-#ifdef ENABLE_DEBUGGER_SUPPORT
-  if (isolate->debug()->InDebugger()) {
-    // If currently in the debugger don't do any actual preemption but record
-    // that preemption occoured while in the debugger.
-    isolate->debug()->PreemptionWhileInDebugger();
-  } else {
-    // Perform preemption.
-    v8::Unlocker unlocker(reinterpret_cast<v8::Isolate*>(isolate));
-    Thread::YieldCPU();
-  }
-#else
-  { // NOLINT
-    // Perform preemption.
-    v8::Unlocker unlocker(reinterpret_cast<v8::Isolate*>(isolate));
-    Thread::YieldCPU();
-  }
-#endif
-
-  return isolate->heap()->undefined_value();
-}
-
-
 #ifdef ENABLE_DEBUGGER_SUPPORT
 Object* Execution::DebugBreakHelper() {
   Isolate* isolate = Isolate::Current();
@@ -863,7 +800,6 @@ MaybeObject* Execution::HandleStackGuardInterrupt() {
     DebugBreakHelper();
   }
 #endif
-  if (stack_guard->IsPreempted()) RuntimePreempt();
   if (stack_guard->IsTerminateExecution()) {
     stack_guard->Continue(TERMINATE);
     return isolate->TerminateExecution();

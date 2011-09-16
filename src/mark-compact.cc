@@ -988,22 +988,6 @@ class MarkingVisitor : public ObjectVisitor {
 };
 
 
-class CodeMarkingVisitor : public ThreadVisitor {
- public:
-  explicit CodeMarkingVisitor(MarkCompactCollector* collector)
-      : collector_(collector) {}
-
-  void VisitThread(Isolate* isolate, ThreadLocalTop* top) {
-    for (StackFrameIterator it(isolate, top); !it.done(); it.Advance()) {
-      collector_->MarkObject(it.frame()->unchecked_code());
-    }
-  }
-
- private:
-  MarkCompactCollector* collector_;
-};
-
-
 class SharedFunctionInfoMarkingVisitor : public ObjectVisitor {
  public:
   explicit SharedFunctionInfoMarkingVisitor(MarkCompactCollector* collector)
@@ -1056,9 +1040,7 @@ void MarkCompactCollector::PrepareForCodeFlushing() {
 
   // Iterate the archived stacks in all threads to check if
   // the code is referenced.
-  CodeMarkingVisitor code_marking_visitor(this);
-  heap()->isolate()->thread_manager()->IterateArchivedThreads(
-      &code_marking_visitor);
+  // TODO(w16): iterate concurrent threads?
 
   SharedFunctionInfoMarkingVisitor visitor(this);
   heap()->isolate()->compilation_cache()->IterateFunctions(&visitor);

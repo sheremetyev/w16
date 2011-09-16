@@ -38,7 +38,6 @@
 #include "runtime.h"
 #include "serialize.h"
 #include "stub-cache.h"
-#include "v8threads.h"
 
 namespace v8 {
 namespace internal {
@@ -634,7 +633,7 @@ void Deserializer::Deserialize() {
   // Don't use the free lists while deserializing.
   LinearAllocationScope allocate_linearly;
   // No active threads.
-  ASSERT_EQ(NULL, isolate_->thread_manager()->FirstThreadStateInUse());
+  // TODO(w16): ask STM?
   // No active handles.
   ASSERT(isolate_->handle_scope_implementer()->blocks()->is_empty());
   // Make sure the entire partial snapshot cache is traversed, filling it with
@@ -1061,7 +1060,7 @@ Serializer::~Serializer() {
 void StartupSerializer::SerializeStrongReferences() {
   Isolate* isolate = Isolate::Current();
   // No active threads.
-  CHECK_EQ(NULL, Isolate::Current()->thread_manager()->FirstThreadStateInUse());
+  // TODO(w16): ask STM?
   // No active or weak handles.
   CHECK(isolate->handle_scope_implementer()->blocks()->is_empty());
   CHECK_EQ(0, isolate->global_handles()->NumberOfWeakHandles());

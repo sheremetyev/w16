@@ -410,12 +410,6 @@ class HandleScopeImplementer {
     DeleteArray(spare_);
   }
 
-  // Threading support for handle data.
-  static int ArchiveSpacePerThread();
-  char* RestoreThread(char* from);
-  char* ArchiveThread(char* to);
-  void FreeThreadResources();
-
   // Garbage collection support.
   void Iterate(v8::internal::ObjectVisitor* v);
   static char* Iterate(v8::internal::ObjectVisitor* v, char* data);
@@ -442,14 +436,6 @@ class HandleScopeImplementer {
   inline List<internal::Object**>* blocks() { return &blocks_; }
 
  private:
-  void ResetAfterArchive() {
-    blocks_.Initialize(0);
-    entered_contexts_.Initialize(0);
-    saved_contexts_.Initialize(0);
-    spare_ = NULL;
-    call_depth_ = 0;
-  }
-
   void Free() {
     ASSERT(blocks_.length() == 0);
     ASSERT(entered_contexts_.length() == 0);
@@ -476,8 +462,6 @@ class HandleScopeImplementer {
   v8::ImplementationUtilities::HandleScopeData handle_scope_data_;
 
   void IterateThis(ObjectVisitor* v);
-  char* RestoreThreadHelper(char* from);
-  char* ArchiveThreadHelper(char* to);
 
   DISALLOW_COPY_AND_ASSIGN(HandleScopeImplementer);
 };

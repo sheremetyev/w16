@@ -77,7 +77,6 @@ class StringTracker;
 class StubCache;
 class ThreadManager;
 class ThreadState;
-class ThreadVisitor;  // Defined in v8threads.h
 class VMState;
 
 // 'void function pointer', used to roundtrip the
@@ -635,9 +634,6 @@ class Isolate {
     return Handle<JSBuiltinsObject>(thread_local_top_.context_->builtins());
   }
 
-  static int ArchiveSpacePerThread() { return sizeof(ThreadLocalTop); }
-  void FreeThreadResources() { thread_local_top_.Free(); }
-
   // This method is called by the api after operations that may throw
   // exceptions.  If an exception was thrown and not handled by an external
   // handler the exception is scheduled to be rethrown when we return to running
@@ -736,8 +732,6 @@ class Isolate {
   void Iterate(ObjectVisitor* v);
   void Iterate(ObjectVisitor* v, ThreadLocalTop* t);
   char* Iterate(ObjectVisitor* v, char* t);
-  void IterateThread(ThreadVisitor* v);
-  void IterateThread(ThreadVisitor* v, char* t);
 
 
   // Returns the current global context.
@@ -750,8 +744,6 @@ class Isolate {
   void RegisterTryCatchHandler(v8::TryCatch* that);
   void UnregisterTryCatchHandler(v8::TryCatch* that);
 
-  char* ArchiveThread(char* to);
-  char* RestoreThread(char* from);
 
   static const char* const kStackOverflowMessage;
 
@@ -851,14 +843,6 @@ class Isolate {
   StringInputBuffer* write_input_buffer() { return write_input_buffer_; }
 
   GlobalHandles* global_handles() { return global_handles_; }
-
-  ThreadManager* thread_manager() { return thread_manager_; }
-
-  ContextSwitcher* context_switcher() { return context_switcher_; }
-
-  void set_context_switcher(ContextSwitcher* switcher) {
-    context_switcher_ = switcher;
-  }
 
   StringTracker* string_tracker() { return string_tracker_; }
 
@@ -1140,8 +1124,6 @@ class Isolate {
   PcToCodeCache* pc_to_code_cache_;
   StringInputBuffer* write_input_buffer_;
   GlobalHandles* global_handles_;
-  ContextSwitcher* context_switcher_;
-  ThreadManager* thread_manager_;
   RuntimeState runtime_state_;
   StaticResource<SafeStringInputBuffer> compiler_safe_string_input_buffer_;
   Builtins builtins_;
@@ -1205,8 +1187,6 @@ class Isolate {
   friend class ThreadId;
   friend class TestMemoryAllocatorScope;
   friend class v8::Isolate;
-  friend class v8::Locker;
-  friend class v8::Unlocker;
 
   DISALLOW_COPY_AND_ASSIGN(Isolate);
 };

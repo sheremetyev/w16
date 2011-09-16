@@ -5481,34 +5481,6 @@ void Relocatable::PostGarbageCollectionProcessing() {
 }
 
 
-// Reserve space for statics needing saving and restoring.
-int Relocatable::ArchiveSpacePerThread() {
-  return sizeof(Isolate::Current()->relocatable_top());
-}
-
-
-// Archive statics that are thread local.
-char* Relocatable::ArchiveState(Isolate* isolate, char* to) {
-  *reinterpret_cast<Relocatable**>(to) = isolate->relocatable_top();
-  isolate->set_relocatable_top(NULL);
-  return to + ArchiveSpacePerThread();
-}
-
-
-// Restore statics that are thread local.
-char* Relocatable::RestoreState(Isolate* isolate, char* from) {
-  isolate->set_relocatable_top(*reinterpret_cast<Relocatable**>(from));
-  return from + ArchiveSpacePerThread();
-}
-
-
-char* Relocatable::Iterate(ObjectVisitor* v, char* thread_storage) {
-  Relocatable* top = *reinterpret_cast<Relocatable**>(thread_storage);
-  Iterate(v, top);
-  return thread_storage + ArchiveSpacePerThread();
-}
-
-
 void Relocatable::Iterate(ObjectVisitor* v) {
   Isolate* isolate = Isolate::Current();
   Iterate(v, isolate->relocatable_top());

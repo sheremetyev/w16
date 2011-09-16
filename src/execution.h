@@ -169,11 +169,6 @@ class StackGuard {
   // is assumed to grow downwards.
   void SetStackLimit(uintptr_t limit);
 
-  // Threading support.
-  char* ArchiveStackGuard(char* to);
-  char* RestoreStackGuard(char* from);
-  static int ArchiveSpacePerThread() { return sizeof(ThreadLocal); }
-  void FreeThreadResources();
   // Sets up the default stack guard for this thread if it has not
   // already been set up.
   void InitThread(const ExecutionAccess& lock);

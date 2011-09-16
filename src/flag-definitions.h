@@ -320,10 +320,6 @@ DEFINE_bool(trace_exception, false,
 DEFINE_bool(preallocate_message_memory, false,
             "preallocate some memory to build stack traces.")
 
-// v8.cc
-DEFINE_bool(preemption, false,
-            "activate a 100ms timer that switches between V8 threads")
-
 // Regexp
 DEFINE_bool(regexp_optimization, true, "generate optimized regexp code")
 DEFINE_bool(regexp_entry_native, true, "use native code to enter regexp")

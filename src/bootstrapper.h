@@ -115,12 +115,6 @@ class Bootstrapper {
   // Tells whether bootstrapping is active.
   bool IsActive() const { return nesting_ != 0; }
 
-  // Support for thread preemption.
-  static int ArchiveSpacePerThread();
-  char* ArchiveState(char* to);
-  char* RestoreState(char* from);
-  void FreeThreadResources();
-
   // This will allocate a char array that is deleted when V8 is shut down.
   // It should only be used for strictly finite allocations.
   char* AllocateAutoDeletedArray(int bytes);

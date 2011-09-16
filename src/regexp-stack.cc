@@ -54,23 +54,6 @@ RegExpStack::~RegExpStack() {
 }
 
 
-char* RegExpStack::ArchiveStack(char* to) {
-  size_t size = sizeof(thread_local_);
-  memcpy(reinterpret_cast<void*>(to),
-         &thread_local_,
-         size);
-  thread_local_ = ThreadLocal();
-  return to + size;
-}
-
-
-char* RegExpStack::RestoreStack(char* from) {
-  size_t size = sizeof(thread_local_);
-  memcpy(&thread_local_, reinterpret_cast<void*>(from), size);
-  return from + size;
-}
-
-
 void RegExpStack::Reset() {
   if (thread_local_.memory_size_ > kMinimumStackSize) {
     DeleteArray(thread_local_.memory_);

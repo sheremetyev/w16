@@ -39,7 +39,6 @@
 #include "hashmap.h"
 #include "platform.h"
 #include "string-stream.h"
-#include "v8threads.h"
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
 #include "../include/v8-debug.h"
@@ -375,12 +374,6 @@ class Debug {
   friend class Debugger;
   friend Handle<FixedArray> GetDebuggedFunctions();  // In test-debug.cc
   friend void CheckDebuggerUnloaded(bool check_functions);  // In test-debug.cc
-
-  // Threading support.
-  char* ArchiveDebug(char* to);
-  char* RestoreDebug(char* from);
-  static int ArchiveSpacePerThread();
-  void FreeThreadResources() { }
 
   // Mirror cache handling.
   void ClearMirrorCache();
