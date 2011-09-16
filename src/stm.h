@@ -16,6 +16,8 @@ class STM {
   void EnterCollectionScope();
   void LeaveCollectionScope();
 
+  void Iterate(ObjectVisitor* v);
+
   Handle<Object> RedirectLoad(Handle<Object> obj, bool* terminate);
   Handle<Object> RedirectStore(Handle<Object> obj, bool* terminate);
 

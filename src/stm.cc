@@ -30,6 +30,31 @@ class CellMap {
     first_block_(NULL), last_block_address_(&first_block_) {
   }
 
+  ~CellMap() {
+    // TODO: free blocks
+  }
+
+  void Iterate(ObjectVisitor* v) {
+    Block* block = first_block_;
+
+    while (block != NULL && block != *last_block_address_) {
+      for (int i = 0; i < BLOCK_SIZE; i++) {
+        CellPair& pair = block->cells_[i];
+        v->VisitPointer(&pair.from_);
+        v->VisitPointer(&pair.to_);
+      }
+      block = block->next_;
+    }
+
+    if (block != NULL) { // last block
+      for (int i = 0; i < index_; i++) {
+        CellPair& pair = block->cells_[i];
+        v->VisitPointer(&pair.from_);
+        v->VisitPointer(&pair.to_);
+      }
+    }
+  }
+
   bool IsMapped(Object** location) {
     Block* block = first_block_;
 
@@ -149,6 +174,7 @@ class WriteSet {
   void Iterate(ObjectVisitor* v) {
     // interate all handles (they may be updated)
     // update our sets if handles were updated
+    map_.Iterate(v);
   }
 
   Handle<Object> Get(Handle<Object> obj) {
@@ -190,6 +216,7 @@ class WriteSet {
 class ReadSet {
  public:
   void Iterate(ObjectVisitor* v) {
+    map_.Iterate(v);
   }
 
   Handle<Object> Get(Handle<Object> obj) {
@@ -280,7 +307,7 @@ class Transaction {
     }
 
     // make a copy
-    JSObject* copy = CreateCopy(*obj);
+    JSObject* copy = CreateCopy(obj);
     if (copy == NULL) {
       FATAL("Cannot create object copy");
       aborted_ = true;
@@ -293,10 +320,10 @@ class Transaction {
     return write_set_.Add(obj, copy);
   }
 
-  JSObject* CreateCopy(Object* obj) {
-    JSObject* jsObj = JSObject::cast(obj);
+  JSObject* CreateCopy(Handle<Object> obj) {
+    // obj will be included in the root list becuase it is used on stack
     CALL_AND_RETRY(isolate_,
-      isolate_->heap()->CopyJSObject(jsObj),
+      isolate_->heap()->CopyJSObject(JSObject::cast(*obj)),
       return JSObject::cast(__object__),
       return NULL);
   }
@@ -356,6 +383,13 @@ void STM::EnterCollectionScope() {
 
 void STM::LeaveCollectionScope() {
   heap_mutex_->Unlock();
+}
+
+void STM::Iterate(ObjectVisitor* v) {
+  Transaction* trans = isolate_->get_transaction();
+  if (trans != NULL) {
+    trans->Iterate(v);
+  }
 }
 
 Handle<Object> STM::RedirectLoad(Handle<Object> obj, bool* terminate) {

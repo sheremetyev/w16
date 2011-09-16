@@ -4979,6 +4979,9 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   isolate_->thread_manager()->Iterate(v);
   v->Synchronize("threadmanager");
 
+  isolate_->stm()->Iterate(v);
+  v->Synchronize("stm");
+
   // Iterate over the pointers the Serialization/Deserialization code is
   // holding.
   // During garbage collection this keeps the partial snapshot cache alive.
