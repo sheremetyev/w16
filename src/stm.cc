@@ -44,6 +44,9 @@ class CellMap {
   }
 
   void Iterate(ObjectVisitor* v) {
+    // notes:
+    // - mapped_locations_ doesn't need invalidation because cells don't move
+
     Block* block = first_block_;
 
     while (block != NULL && block != *last_block_address_) {
@@ -65,26 +68,7 @@ class CellMap {
   }
 
   bool IsMapped(Object** location) {
-    Block* block = first_block_;
-
-    while (block != NULL && block != *last_block_address_) {
-      for (int i = 0; i < BLOCK_SIZE; i++) {
-        if (&block->cells_[i].to_ == location) {
-          return true;
-        }
-      }
-      block = block->next_;
-    }
-
-    if (block != NULL) { // last block
-      for (int i = 0; i < index_; i++) {
-        if (&block->cells_[i].to_ == location) {
-          return true;
-        }
-      }
-    }
-
-    return false;
+    return mapped_locations_.find(location) != mapped_locations_.end();
   }
 
   Object** GetMapping(Object* object) {
@@ -122,6 +106,8 @@ class CellMap {
     pair.from_ = object;
     pair.to_ = redirect;
     index_++;
+
+    mapped_locations_.insert(&pair.to_);
 
     // block is full
     if (index_ == BLOCK_SIZE) {
@@ -176,6 +162,8 @@ class CellMap {
   Block*  first_block_;
   Block** last_block_address_;
   int index_;
+
+  std::set<Object**> mapped_locations_;
 };
 
 class WriteSet {
