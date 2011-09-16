@@ -117,19 +117,24 @@ void EventLoop(v8::internal::STM* stm) {
     }
 
     if (e != NULL) {
-      // restart transaction until it is successfully committed
-      while (true) {
-        stm->StartTransaction();
-        v8::internal::NoBarrier_AtomicIncrement(&total_transactions, 1);
+      if (v8::internal::FLAG_stm) {
+        // restart transaction until it is successfully committed
+        while (true) {
+          stm->StartTransaction();
+          v8::internal::NoBarrier_AtomicIncrement(&total_transactions, 1);
 
+          HandleScope handle_scope;
+          e->Execute();
+
+          if (stm->CommitTransaction()) {
+            break; // while(true)
+          } else {
+            v8::internal::NoBarrier_AtomicIncrement(&aborted_transactions, 1);
+          }
+        }
+      } else {
         HandleScope handle_scope;
         e->Execute();
-
-        if (stm->CommitTransaction()) {
-          break; // while(true)
-        } else {
-          v8::internal::NoBarrier_AtomicIncrement(&aborted_transactions, 1);
-        }
       }
       delete e;
     }
@@ -190,6 +195,11 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  if (!v8::internal::FLAG_stm && v8::internal::FLAG_threads > 1) {
+    printf("Threads number should be 1 in non-transactional mode.\n");
+    return 1;
+  }
+
   V8::Initialize();
 
   // create a stack-allocated handle scope
@@ -214,9 +224,13 @@ int main(int argc, char **argv) {
   int64_t start_time = v8::internal::OS::Ticks();
 
   // load and run the initial script in a transaction
-  stm->StartTransaction();
-  Script::New(ReadFile(filename), String::New(filename))->Run();
-  ASSERT(stm->CommitTransaction());
+  if (v8::internal::FLAG_stm) {
+    stm->StartTransaction();
+    Script::New(ReadFile(filename), String::New(filename))->Run();
+    ASSERT(stm->CommitTransaction());
+  } else {
+    Script::New(ReadFile(filename), String::New(filename))->Run();
+  }
 
   // run event loops in worker threads (less the loop running in main thread)
   WorkerThread* thread[MAX_THREADS];
