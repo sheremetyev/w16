@@ -139,9 +139,11 @@ void EventLoop(v8::internal::STM* stm) {
 class WorkerThread : public v8::internal::Thread {
   Persistent<Context> context_;
   Isolate* isolate_;
+  v8::internal::STM* stm_;
 public:
-  WorkerThread(const char* name, Handle<Context> context)
-    : v8::internal::Thread(name) {
+  WorkerThread(const char* name, Handle<Context> context,
+               v8::internal::STM* stm)
+    : v8::internal::Thread(name), stm_(stm) {
     isolate_ = Isolate::GetCurrent();
     context_ = Persistent<Context>::New(context);
   }
@@ -156,7 +158,7 @@ public:
     Context::Scope context_scope(context_);
 
     // run event loop
-    EventLoop(reinterpret_cast<v8::internal::Isolate*>(isolate_)->stm());
+    EventLoop(stm_);
   }
 };
 
@@ -205,24 +207,29 @@ int main(int argc, char **argv) {
   // enter the context for compiling and running the script
   Context::Scope context_scope(context);
 
+  Isolate* isolate = Isolate::GetCurrent();
+  v8::internal::STM* stm =
+    reinterpret_cast<v8::internal::Isolate*>(isolate)->stm();
+
   int64_t start_time = v8::internal::OS::Ticks();
 
-  // load and run the script
+  // load and run the initial script in a transaction
+  stm->StartTransaction();
   Script::New(ReadFile(filename), String::New(filename))->Run();
+  ASSERT(stm->CommitTransaction());
 
   // run event loops in worker threads (less the loop running in main thread)
   WorkerThread* thread[MAX_THREADS];
   for (int i = 0; i < threads-1; i++) {
     char name[100];
     sprintf(name, "Worker %d", i+1);
-    thread[i] = new WorkerThread(name, context);
+    thread[i] = new WorkerThread(name, context, stm);
     thread[i]->Start();
   }
 
   // run event loop in main thread too
   v8::internal::Thread::SetThreadLocal(thread_name_key, "Worker 0");
-  Isolate* isolate = Isolate::GetCurrent();
-  EventLoop(reinterpret_cast<v8::internal::Isolate*>(isolate)->stm());
+  EventLoop(stm);
 
   // stop when all threads are idle and the event queue is empty
   for (int i = 0; i < threads-1; i++) {

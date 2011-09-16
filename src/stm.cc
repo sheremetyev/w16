@@ -274,7 +274,7 @@ class Transaction {
   Handle<Object> RedirectLoad(Handle<Object> obj, bool* terminate) {
     ASSERT(!obj.is_null());
 
-    if (!obj->IsJSObject()) {
+    if (!obj->IsJSObject() || obj->IsJSFunction()) {
       return obj;
     }
 
@@ -301,8 +301,10 @@ class Transaction {
   Handle<Object> RedirectStore(Handle<Object> obj, bool* terminate) {
     ASSERT(!obj.is_null());
 
-    if (!obj->IsJSObject())
+    // TODO: handle functions too (Heap::CopyJSObject doesn't accept them)
+    if (!obj->IsJSObject() || obj->IsJSFunction()) {
       return obj;
+    }
 
     if (aborted_) {
       *terminate = true;
@@ -433,7 +435,7 @@ bool STM::CommitTransaction() {
 
   // for testing - abort each other transaction
   static bool even = true;
-  if (even) {
+  if (!even) {
     trans->Abort();
   }
   even = ! even;
