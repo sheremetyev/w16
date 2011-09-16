@@ -427,13 +427,12 @@ void STM::StartTransaction() {
   transactions_.Add(trans);
 }
 
-static bool even = true;
-
 bool STM::CommitTransaction() {
   Transaction* trans = isolate_->get_transaction();
   ASSERT_NOT_NULL(trans);
 
   // for testing - abort each other transaction
+  static bool even = true;
   if (even) {
     trans->Abort();
   }
