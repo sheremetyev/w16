@@ -306,9 +306,7 @@ void Isolate::PreallocatedStorageDelete(void* p) {
 Isolate* Isolate::default_isolate_ = NULL;
 Thread::LocalStorageKey Isolate::isolate_key_;
 Thread::LocalStorageKey Isolate::thread_id_key_;
-Thread::LocalStorageKey Isolate::per_isolate_thread_data_key_;
 Mutex* Isolate::process_wide_mutex_ = OS::CreateMutex();
-Isolate::ThreadDataTable* Isolate::thread_data_table_ = NULL;
 
 
 class IsolateInitializer {
@@ -328,63 +326,14 @@ static IsolateInitializer* EnsureDefaultIsolateAllocated() {
 static IsolateInitializer* static_initializer = EnsureDefaultIsolateAllocated();
 
 
-
-
-
-Isolate::PerIsolateThreadData* Isolate::AllocatePerIsolateThreadData(
-    ThreadId thread_id) {
-  ASSERT(!thread_id.Equals(ThreadId::Invalid()));
-  PerIsolateThreadData* per_thread = new PerIsolateThreadData(this, thread_id);
-  {
-    ScopedLock lock(process_wide_mutex_);
-    ASSERT(thread_data_table_->Lookup(this, thread_id) == NULL);
-    thread_data_table_->Insert(per_thread);
-    ASSERT(thread_data_table_->Lookup(this, thread_id) == per_thread);
-  }
-  return per_thread;
-}
-
-
-Isolate::PerIsolateThreadData*
-    Isolate::FindOrAllocatePerThreadDataForThisThread() {
-  ThreadId thread_id = ThreadId::Current();
-  PerIsolateThreadData* per_thread = NULL;
-  {
-    ScopedLock lock(process_wide_mutex_);
-    per_thread = thread_data_table_->Lookup(this, thread_id);
-    if (per_thread == NULL) {
-      per_thread = AllocatePerIsolateThreadData(thread_id);
-    }
-  }
-  return per_thread;
-}
-
-
-Isolate::PerIsolateThreadData* Isolate::FindPerThreadDataForThisThread() {
-  ThreadId thread_id = ThreadId::Current();
-  PerIsolateThreadData* per_thread = NULL;
-  {
-    ScopedLock lock(process_wide_mutex_);
-    per_thread = thread_data_table_->Lookup(this, thread_id);
-  }
-  return per_thread;
-}
-
-
 void Isolate::EnsureDefaultIsolate() {
   ScopedLock lock(process_wide_mutex_);
   if (default_isolate_ == NULL) {
     isolate_key_ = Thread::CreateThreadLocalKey();
     thread_id_key_ = Thread::CreateThreadLocalKey();
-    per_isolate_thread_data_key_ = Thread::CreateThreadLocalKey();
-    thread_data_table_ = new Isolate::ThreadDataTable();
     default_isolate_ = new Isolate();
   }
-  // Can't use SetIsolateThreadLocals(default_isolate_, NULL) here
-  // becase a non-null thread data may be already set.
-  if (Thread::GetThreadLocal(isolate_key_) == NULL) {
-    Thread::SetThreadLocal(isolate_key_, default_isolate_);
-  }
+  SetIsolateThreadLocals(default_isolate_);
 }
 
 
@@ -406,11 +355,9 @@ void Isolate::EnterDefaultIsolate() {
   EnsureDefaultIsolate();
   ASSERT(default_isolate_ != NULL);
 
-  PerIsolateThreadData* data = CurrentPerIsolateThreadData();
   // If not yet in default isolate - enter it.
-  if (data == NULL || data->isolate() != default_isolate_) {
-    default_isolate_->Enter();
-  }
+  // TODO(w16): need it?
+  default_isolate_->Enter();
 }
 
 
@@ -1260,55 +1207,6 @@ Handle<Context> Isolate::GetCallingGlobalContext() {
 }
 
 
-Isolate::ThreadDataTable::ThreadDataTable()
-    : list_(NULL) {
-}
-
-
-Isolate::PerIsolateThreadData*
-    Isolate::ThreadDataTable::Lookup(Isolate* isolate,
-                                     ThreadId thread_id) {
-  for (PerIsolateThreadData* data = list_; data != NULL; data = data->next_) {
-    if (data->Matches(isolate, thread_id)) return data;
-  }
-  return NULL;
-}
-
-
-void Isolate::ThreadDataTable::Insert(Isolate::PerIsolateThreadData* data) {
-  if (list_ != NULL) list_->prev_ = data;
-  data->next_ = list_;
-  list_ = data;
-}
-
-
-void Isolate::ThreadDataTable::Remove(PerIsolateThreadData* data) {
-  if (list_ == data) list_ = data->next_;
-  if (data->next_ != NULL) data->next_->prev_ = data->prev_;
-  if (data->prev_ != NULL) data->prev_->next_ = data->next_;
-  delete data;
-}
-
-
-void Isolate::ThreadDataTable::Remove(Isolate* isolate,
-                                      ThreadId thread_id) {
-  PerIsolateThreadData* data = Lookup(isolate, thread_id);
-  if (data != NULL) {
-    Remove(data);
-  }
-}
-
-
-void Isolate::ThreadDataTable::RemoveAllThreads(Isolate* isolate) {
-  PerIsolateThreadData* data = list_;
-  while (data != NULL) {
-    PerIsolateThreadData* next = data->next_;
-    if (data->isolate() == isolate) Remove(data);
-    data = next;
-  }
-}
-
-
 #ifdef DEBUG
 #define TRACE_ISOLATE(tag)                                              \
   do {                                                                  \
@@ -1323,7 +1221,6 @@ void Isolate::ThreadDataTable::RemoveAllThreads(Isolate* isolate) {
 
 Isolate::Isolate()
     : state_(UNINITIALIZED),
-      entry_stack_(NULL),
       stack_trace_nesting_level_(0),
       incomplete_message_(NULL),
       preallocated_memory_thread_(NULL),
@@ -1411,22 +1308,17 @@ void Isolate::TearDown() {
   // the isolate can access it in their destructors without having a
   // direct pointer. We don't use Enter/Exit here to avoid
   // initializing the thread data.
-  PerIsolateThreadData* saved_data = CurrentPerIsolateThreadData();
   Isolate* saved_isolate = UncheckedCurrent();
-  SetIsolateThreadLocals(this, NULL);
+  SetIsolateThreadLocals(this);
 
   Deinit();
-
-  { ScopedLock lock(process_wide_mutex_);
-    thread_data_table_->RemoveAllThreads(this);
-  }
 
   if (!IsDefaultIsolate()) {
     delete this;
   }
 
   // Restore the previous current isolate.
-  SetIsolateThreadLocals(saved_isolate, saved_data);
+  SetIsolateThreadLocals(saved_isolate);
 }
 
 
@@ -1465,10 +1357,8 @@ void Isolate::Deinit() {
 }
 
 
-void Isolate::SetIsolateThreadLocals(Isolate* isolate,
-                                     PerIsolateThreadData* data) {
+void Isolate::SetIsolateThreadLocals(Isolate* isolate) {
   Thread::SetThreadLocal(isolate_key_, isolate);
-  Thread::SetThreadLocal(per_isolate_thread_data_key_, data);
 }
 
 
@@ -1735,71 +1625,13 @@ StatsTable* Isolate::stats_table() {
 
 
 void Isolate::Enter() {
-  Isolate* current_isolate = NULL;
-  PerIsolateThreadData* current_data = CurrentPerIsolateThreadData();
-  if (current_data != NULL) {
-    current_isolate = current_data->isolate_;
-    ASSERT(current_isolate != NULL);
-    if (current_isolate == this) {
-      ASSERT(Current() == this);
-      ASSERT(entry_stack_ != NULL);
-      ASSERT(entry_stack_->previous_thread_data == NULL ||
-             entry_stack_->previous_thread_data->thread_id().Equals(
-                 ThreadId::Current()));
-      // Same thread re-enters the isolate, no need to re-init anything.
-      entry_stack_->entry_count++;
-      return;
-    }
-  }
-
-  // Threads can have default isolate set into TLS as Current but not yet have
-  // PerIsolateThreadData for it, as it requires more advanced phase of the
-  // initialization. For example, a thread might be the one that system used for
-  // static initializers - in this case the default isolate is set in TLS but
-  // the thread did not yet Enter the isolate. If PerisolateThreadData is not
-  // there, use the isolate set in TLS.
-  if (current_isolate == NULL) {
-    current_isolate = Isolate::UncheckedCurrent();
-  }
-
-  PerIsolateThreadData* data = FindOrAllocatePerThreadDataForThisThread();
-  ASSERT(data != NULL);
-  ASSERT(data->isolate_ == this);
-
-  EntryStackItem* item = new EntryStackItem(current_data,
-                                            current_isolate,
-                                            entry_stack_);
-  entry_stack_ = item;
-
-  SetIsolateThreadLocals(this, data);
-
-  // In case it's the first time some thread enters the isolate.
-  set_thread_id(data->thread_id());
+  SetIsolateThreadLocals(this);
+  set_thread_id(ThreadId::Current());
 }
 
 
 void Isolate::Exit() {
-  ASSERT(entry_stack_ != NULL);
-  ASSERT(entry_stack_->previous_thread_data == NULL ||
-         entry_stack_->previous_thread_data->thread_id().Equals(
-             ThreadId::Current()));
-
-  if (--entry_stack_->entry_count > 0) return;
-
-  ASSERT(CurrentPerIsolateThreadData() != NULL);
-  ASSERT(CurrentPerIsolateThreadData()->isolate_ == this);
-
-  // Pop the stack.
-  EntryStackItem* item = entry_stack_;
-  entry_stack_ = item->previous_item;
-
-  PerIsolateThreadData* previous_thread_data = item->previous_thread_data;
-  Isolate* previous_isolate = item->previous_isolate;
-
-  delete item;
-
-  // Reinit the current thread for the isolate it was running before this one.
-  SetIsolateThreadLocals(previous_isolate, previous_thread_data);
+  SetIsolateThreadLocals(NULL);
 }
 
 

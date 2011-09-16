@@ -75,8 +75,6 @@ class UnicodeCache;
 class StringInputBuffer;
 class StringTracker;
 class StubCache;
-class ThreadManager;
-class ThreadState;
 class VMState;
 
 // 'void function pointer', used to roundtrip the
@@ -358,69 +356,8 @@ typedef List<HeapObject*, PreallocatedStorage> DebugObjectCache;
   ISOLATE_DEBUGGER_INIT_LIST(V)
 
 class Isolate {
-  // These forward declarations are required to make the friend declarations in
-  // PerIsolateThreadData work on some older versions of gcc.
-  class ThreadDataTable;
-  class EntryStackItem;
  public:
   ~Isolate();
-
-  // A thread has a PerIsolateThreadData instance for each isolate that it has
-  // entered. That instance is allocated when the isolate is initially entered
-  // and reused on subsequent entries.
-  class PerIsolateThreadData {
-   public:
-    PerIsolateThreadData(Isolate* isolate, ThreadId thread_id)
-        : isolate_(isolate),
-          thread_id_(thread_id),
-          stack_limit_(0),
-          thread_state_(NULL),
-#if !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
-    !defined(__mips__) && defined(V8_TARGET_ARCH_MIPS)
-          simulator_(NULL),
-#endif
-          next_(NULL),
-          prev_(NULL) { }
-    Isolate* isolate() const { return isolate_; }
-    ThreadId thread_id() const { return thread_id_; }
-    void set_stack_limit(uintptr_t value) { stack_limit_ = value; }
-    uintptr_t stack_limit() const { return stack_limit_; }
-    ThreadState* thread_state() const { return thread_state_; }
-    void set_thread_state(ThreadState* value) { thread_state_ = value; }
-
-#if !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
-    !defined(__mips__) && defined(V8_TARGET_ARCH_MIPS)
-    Simulator* simulator() const { return simulator_; }
-    void set_simulator(Simulator* simulator) {
-      simulator_ = simulator;
-    }
-#endif
-
-    bool Matches(Isolate* isolate, ThreadId thread_id) const {
-      return isolate_ == isolate && thread_id_.Equals(thread_id);
-    }
-
-   private:
-    Isolate* isolate_;
-    ThreadId thread_id_;
-    uintptr_t stack_limit_;
-    ThreadState* thread_state_;
-
-#if !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
-    !defined(__mips__) && defined(V8_TARGET_ARCH_MIPS)
-    Simulator* simulator_;
-#endif
-
-    PerIsolateThreadData* next_;
-    PerIsolateThreadData* prev_;
-
-    friend class Isolate;
-    friend class ThreadDataTable;
-    friend class EntryStackItem;
-
-    DISALLOW_COPY_AND_ASSIGN(PerIsolateThreadData);
-  };
-
 
   enum AddressId {
 #define DECLARE_ENUM(CamelName, hacker_name) k##CamelName##Address,
@@ -428,13 +365,6 @@ class Isolate {
 #undef C
     kIsolateAddressCount
   };
-
-  // Returns the PerIsolateThreadData for the current thread (or NULL if one is
-  // not currently set).
-  static PerIsolateThreadData* CurrentPerIsolateThreadData() {
-    return reinterpret_cast<PerIsolateThreadData*>(
-        Thread::GetThreadLocal(per_isolate_thread_data_key_));
-  }
 
   // Returns the isolate inside which the current thread is running.
   INLINE(static Isolate* Current()) {
@@ -460,7 +390,10 @@ class Isolate {
   bool IsInitialized() { return state_ == INITIALIZED; }
 
   // True if at least one thread Enter'ed this isolate.
-  bool IsInUse() { return entry_stack_ != NULL; }
+  bool IsInUse() {
+    // TODO(w16): ask STM
+    return false;
+  }
 
   // Destroys the non-default isolates.
   // Sets default isolate into "has_been_disposed" state rather then destroying,
@@ -474,10 +407,6 @@ class Isolate {
   // example if you are using V8 from within the body of a static initializer.
   // Safe to call multiple times.
   static void EnsureDefaultIsolate();
-
-  // Find the PerThread for this particular (isolate, thread) combination
-  // If one does not yet exist, return null.
-  PerIsolateThreadData* FindPerThreadDataForThisThread();
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
   // Get the debugger from the default isolate. Preinitializes the
@@ -979,61 +908,17 @@ class Isolate {
  private:
   Isolate();
 
-  // The per-process lock should be acquired before the ThreadDataTable is
-  // modified.
-  class ThreadDataTable {
-   public:
-    ThreadDataTable();
-    ~ThreadDataTable();
-
-    PerIsolateThreadData* Lookup(Isolate* isolate, ThreadId thread_id);
-    void Insert(PerIsolateThreadData* data);
-    void Remove(Isolate* isolate, ThreadId thread_id);
-    void Remove(PerIsolateThreadData* data);
-    void RemoveAllThreads(Isolate* isolate);
-
-   private:
-    PerIsolateThreadData* list_;
-  };
-
-  // These items form a stack synchronously with threads Enter'ing and Exit'ing
-  // the Isolate. The top of the stack points to a thread which is currently
-  // running the Isolate. When the stack is empty, the Isolate is considered
-  // not entered by any thread and can be Disposed.
-  // If the same thread enters the Isolate more then once, the entry_count_
-  // is incremented rather then a new item pushed to the stack.
-  class EntryStackItem {
-   public:
-    EntryStackItem(PerIsolateThreadData* previous_thread_data,
-                   Isolate* previous_isolate,
-                   EntryStackItem* previous_item)
-        : entry_count(1),
-          previous_thread_data(previous_thread_data),
-          previous_isolate(previous_isolate),
-          previous_item(previous_item) { }
-
-    int entry_count;
-    PerIsolateThreadData* previous_thread_data;
-    Isolate* previous_isolate;
-    EntryStackItem* previous_item;
-
-    DISALLOW_COPY_AND_ASSIGN(EntryStackItem);
-  };
-
   // This mutex protects highest_thread_id_, thread_data_table_ and
   // default_isolate_.
   static Mutex* process_wide_mutex_;
 
-  static Thread::LocalStorageKey per_isolate_thread_data_key_;
   static Thread::LocalStorageKey isolate_key_;
   static Thread::LocalStorageKey thread_id_key_;
   static Isolate* default_isolate_;
-  static ThreadDataTable* thread_data_table_;
 
   void Deinit();
 
-  static void SetIsolateThreadLocals(Isolate* isolate,
-                                     PerIsolateThreadData* data);
+  static void SetIsolateThreadLocals(Isolate* isolate);
 
   enum State {
     UNINITIALIZED,    // Some components may not have been allocated.
@@ -1041,17 +926,8 @@ class Isolate {
   };
 
   State state_;
-  EntryStackItem* entry_stack_;
 
-  // Allocate and insert PerIsolateThreadData into the ThreadDataTable
-  // (regardless of whether such data already exists).
-  PerIsolateThreadData* AllocatePerIsolateThreadData(ThreadId thread_id);
-
-  // Find the PerThread for this particular (isolate, thread) combination.
-  // If one does not yet exist, allocate a new one.
-  PerIsolateThreadData* FindOrAllocatePerThreadDataForThisThread();
-
-// PreInits and returns a default isolate. Needed when a new thread tries
+  // PreInits and returns a default isolate. Needed when a new thread tries
   // to create a Locker for the first time (the lock itself is in the isolate).
   static Isolate* GetDefaultIsolateForLocking();
 

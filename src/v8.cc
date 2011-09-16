@@ -62,15 +62,7 @@ bool V8::Initialize(Deserializer* des) {
   // Note the Isolate::Current() may be non-null because for various
   // initialization purposes an initializing thread may be assigned an isolate
   // but not actually enter it.
-  if (i::Isolate::CurrentPerIsolateThreadData() == NULL) {
-    i::Isolate::EnterDefaultIsolate();
-  }
-
-  ASSERT(i::Isolate::CurrentPerIsolateThreadData() != NULL);
-  ASSERT(i::Isolate::CurrentPerIsolateThreadData()->thread_id().Equals(
-           i::ThreadId::Current()));
-  ASSERT(i::Isolate::CurrentPerIsolateThreadData()->isolate() ==
-         i::Isolate::Current());
+  i::Isolate::EnterDefaultIsolate();
 
   if (IsDead()) return false;
 

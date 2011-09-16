@@ -510,13 +510,6 @@ void StackGuard::ClearThread(const ExecutionAccess& lock) {
 
 void StackGuard::InitThread(const ExecutionAccess& lock) {
   if (thread_local_.Initialize(isolate_)) isolate_->heap()->SetStackLimits();
-  Isolate::PerIsolateThreadData* per_thread =
-      isolate_->FindOrAllocatePerThreadDataForThisThread();
-  uintptr_t stored_limit = per_thread->stack_limit();
-  // You should hold the ExecutionAccess lock when you call this.
-  if (stored_limit != 0) {
-    SetStackLimit(stored_limit);
-  }
 }
 
 
