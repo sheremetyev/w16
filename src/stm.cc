@@ -43,17 +43,15 @@ class CellMap {
     last_block_address_ = &first_block_;
   }
 
-  void Iterate(ObjectVisitor* v) {
-    // notes:
-    // - mapped_locations_ doesn't need invalidation because cells don't move
+  void RebuildObjectMap() {
+    object_map_.clear();
 
     Block* block = first_block_;
 
     while (block != NULL && block != *last_block_address_) {
       for (int i = 0; i < BLOCK_SIZE; i++) {
         CellPair& pair = block->cells_[i];
-        v->VisitPointer(&pair.from_);
-        v->VisitPointer(&pair.to_);
+        object_map_.insert(ObjectMap::value_type(pair.from_, &pair.to_));
       }
       block = block->next_;
     }
@@ -61,34 +59,57 @@ class CellMap {
     if (block != NULL) { // last block
       for (int i = 0; i < index_; i++) {
         CellPair& pair = block->cells_[i];
+        object_map_.insert(ObjectMap::value_type(pair.from_, &pair.to_));
+      }
+    }
+  }
+
+  void Iterate(ObjectVisitor* v) {
+    // notes:
+    // - location_set_ doesn't need invalidation because cells don't move
+
+    bool changes = false;
+
+    Block* block = first_block_;
+
+    while (block != NULL && block != *last_block_address_) {
+      for (int i = 0; i < BLOCK_SIZE; i++) {
+        CellPair& pair = block->cells_[i];
+        Object* old_from = pair.from_;
+
         v->VisitPointer(&pair.from_);
         v->VisitPointer(&pair.to_);
+
+        changes = changes || (pair.from_ != old_from);
       }
+      block = block->next_;
+    }
+
+    if (block != NULL) { // last block
+      for (int i = 0; i < index_; i++) {
+        CellPair& pair = block->cells_[i];
+        Object* old_from = pair.from_;
+
+        v->VisitPointer(&pair.from_);
+        v->VisitPointer(&pair.to_);
+
+        changes = changes || (pair.from_ != old_from);
+      }
+    }
+
+    if (changes) {
+      RebuildObjectMap();
     }
   }
 
   bool IsMapped(Object** location) {
-    return mapped_locations_.find(location) != mapped_locations_.end();
+    return location_set_.find(location) != location_set_.end();
   }
 
   Object** GetMapping(Object* object) {
-    Block* block = first_block_;
-
-    while (block != NULL && block != *last_block_address_) {
-      for (int i = 0; i < BLOCK_SIZE; i++) {
-        if (block->cells_[i].from_ == object) {
-          return &block->cells_[i].to_;
-        }
-      }
-      block = block->next_;
-    }
-
-    if (block != NULL) { // last block
-      for (int i = 0; i < index_; i++) {
-        if (block->cells_[i].from_ == object) {
-          return &block->cells_[i].to_;
-        }
-      }
+    ObjectMap::const_iterator it = object_map_.find(object);
+    if (it != object_map_.end()) {
+      return it->second;
     }
 
     return NULL;
@@ -107,7 +128,8 @@ class CellMap {
     pair.to_ = redirect;
     index_++;
 
-    mapped_locations_.insert(&pair.to_);
+    location_set_.insert(&pair.to_);
+    object_map_.insert(ObjectMap::value_type(object, &pair.to_));
 
     // block is full
     if (index_ == BLOCK_SIZE) {
@@ -163,7 +185,11 @@ class CellMap {
   Block** last_block_address_;
   int index_;
 
-  std::set<Object**> mapped_locations_;
+  typedef std::set<Object**> LocationSet;
+  typedef std::map<Object*, Object**> ObjectMap;
+
+  LocationSet location_set_;
+  ObjectMap object_map_;
 };
 
 class WriteSet {
