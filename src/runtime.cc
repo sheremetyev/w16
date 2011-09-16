@@ -1211,46 +1211,17 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_DeclareGlobals) {
       LookupResult lookup;
       global->Lookup(*name, &lookup);
       if (lookup.IsProperty()) {
-        // Determine if the property is local by comparing the holder
-        // against the global object. The information will be used to
-        // avoid throwing re-declaration errors when declaring
-        // variables or constants that exist in the prototype chain.
-        bool is_local = (*global == lookup.holder());
-        // Get the property attributes and determine if the property is
-        // read-only.
-        PropertyAttributes attributes = global->GetPropertyAttribute(*name);
-        bool is_read_only = (attributes & READ_ONLY) != 0;
-        if (lookup.type() == INTERCEPTOR) {
-          // If the interceptor says the property is there, we
-          // just return undefined without overwriting the property.
-          // Otherwise, we continue to setting the property.
-          if (attributes != ABSENT) {
-            // Check if the existing property conflicts with regards to const.
-            if (is_local && (is_read_only || is_const_property)) {
-              const char* type = (is_read_only) ? "const" : "var";
-              return ThrowRedeclarationError(isolate, type, name);
-            };
-            // The property already exists without conflicting: Go to
-            // the next declaration.
-            continue;
-          }
-          // Fall-through and introduce the absent property by using
-          // SetProperty.
-        } else {
-          // For const properties, we treat a callback with this name
-          // even in the prototype as a conflicting declaration.
-          if (is_const_property && (lookup.type() == CALLBACKS)) {
-            return ThrowRedeclarationError(isolate, "const", name);
-          }
-          // Otherwise, we check for locally conflicting declarations.
-          if (is_local && (is_read_only || is_const_property)) {
-            const char* type = (is_read_only) ? "const" : "var";
-            return ThrowRedeclarationError(isolate, type, name);
-          }
-          // The property already exists without conflicting: Go to
-          // the next declaration.
+        // We found an existing property. Unless it was an interceptor
+        // that claims the property is absent, skip this declaration.
+        if (lookup.type() != INTERCEPTOR) {
           continue;
         }
+        PropertyAttributes attributes = global->GetPropertyAttribute(*name);
+        if (attributes != ABSENT) {
+          continue;
+        }
+        // Fall-through and introduce the absent property by using
+        // SetProperty.
       }
     } else {
       is_function_declaration = true;
@@ -1266,20 +1237,6 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_DeclareGlobals) {
 
     LookupResult lookup;
     global->LocalLookup(*name, &lookup);
-
-    // There's a local property that we need to overwrite because
-    // we're either declaring a function or there's an interceptor
-    // that claims the property is absent.
-    //
-    // Check for conflicting re-declarations. We cannot have
-    // conflicting types in case of intercepted properties because
-    // they are absent.
-    if (lookup.IsProperty() &&
-        (lookup.type() != INTERCEPTOR) &&
-        (lookup.IsReadOnly() || is_const_property)) {
-      const char* type = (lookup.IsReadOnly()) ? "const" : "var";
-      return ThrowRedeclarationError(isolate, type, name);
-    }
 
     // Compute the property attributes. According to ECMA-262, section
     // 13, page 71, the property must be read-only and
@@ -1465,64 +1422,32 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_InitializeVarGlobal) {
   // to assign to the property.
   // Note that objects can have hidden prototypes, so we need to traverse
   // the whole chain of hidden prototypes to do a 'local' lookup.
-  JSObject* real_holder = global;
+  Object* object = global;
   LookupResult lookup;
-  while (true) {
-    real_holder->LocalLookup(*name, &lookup);
-    if (lookup.IsProperty()) {
-      // Determine if this is a redeclaration of something read-only.
-      if (lookup.IsReadOnly()) {
-        // If we found readonly property on one of hidden prototypes,
-        // just shadow it.
-        if (real_holder != isolate->context()->global()) break;
-        return ThrowRedeclarationError(isolate, "const", name);
-      }
-
-      // Determine if this is a redeclaration of an intercepted read-only
-      // property and figure out if the property exists at all.
-      bool found = true;
-      PropertyType type = lookup.type();
-      if (type == INTERCEPTOR) {
-        HandleScope handle_scope(isolate);
-        Handle<JSObject> holder(real_holder);
-        PropertyAttributes intercepted = holder->GetPropertyAttribute(*name);
-        real_holder = *holder;
-        if (intercepted == ABSENT) {
-          // The interceptor claims the property isn't there. We need to
-          // make sure to introduce it.
-          found = false;
-        } else if ((intercepted & READ_ONLY) != 0) {
-          // The property is present, but read-only. Since we're trying to
-          // overwrite it with a variable declaration we must throw a
-          // re-declaration error.  However if we found readonly property
-          // on one of hidden prototypes, just shadow it.
-          if (real_holder != isolate->context()->global()) break;
-          return ThrowRedeclarationError(isolate, "const", name);
+  while (object->IsJSObject() &&
+         JSObject::cast(object)->map()->is_hidden_prototype()) {
+    JSObject* raw_holder = JSObject::cast(object);
+    raw_holder->LocalLookup(*name, &lookup);
+    if (lookup.IsProperty() && lookup.type() == INTERCEPTOR) {
+      HandleScope handle_scope(isolate);
+      Handle<JSObject> holder(raw_holder);
+      PropertyAttributes intercepted = holder->GetPropertyAttribute(*name);
+      // Update the raw pointer in case it's changed due to GC.
+      raw_holder = *holder;
+      if (intercepted != ABSENT && (intercepted & READ_ONLY) == 0) {
+        // Found an interceptor that's not read only.
+        if (assign) {
+          return raw_holder->SetProperty(
+              &lookup, *name, args[2], attributes, strict_mode);
+        } else {
+          return isolate->heap()->undefined_value();
         }
       }
-
-      if (found && !assign) {
-        // The global property is there and we're not assigning any value
-        // to it. Just return.
-        return isolate->heap()->undefined_value();
-      }
-
-      // Assign the value (or undefined) to the property.
-      Object* value = (assign) ? args[2] : isolate->heap()->undefined_value();
-      return real_holder->SetProperty(
-          &lookup, *name, value, attributes, strict_mode);
     }
-
-    Object* proto = real_holder->GetPrototype();
-    if (!proto->IsJSObject())
-      break;
-
-    if (!JSObject::cast(proto)->map()->is_hidden_prototype())
-      break;
-
-    real_holder = JSObject::cast(proto);
+    object = raw_holder->GetPrototype();
   }
 
+  // Reload global in case the loop above performed a GC.
   global = isolate->context()->global();
   if (assign) {
     return global->SetProperty(*name, args[2], attributes, strict_mode);
@@ -1560,25 +1485,9 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_InitializeConstGlobal) {
                                                     attributes);
   }
 
-  // Determine if this is a redeclaration of something not
-  // read-only. In case the result is hidden behind an interceptor we
-  // need to ask it for the property attributes.
   if (!lookup.IsReadOnly()) {
-    if (lookup.type() != INTERCEPTOR) {
-      return ThrowRedeclarationError(isolate, "var", name);
-    }
-
-    PropertyAttributes intercepted = global->GetPropertyAttribute(*name);
-
-    // Throw re-declaration error if the intercepted property is present
-    // but not read-only.
-    if (intercepted != ABSENT && (intercepted & READ_ONLY) == 0) {
-      return ThrowRedeclarationError(isolate, "var", name);
-    }
-
     // Restore global object from context (in case of GC) and continue
-    // with setting the value because the property is either absent or
-    // read-only. We also have to do redo the lookup.
+    // with setting the value.
     HandleScope handle_scope(isolate);
     Handle<GlobalObject> global(isolate->context()->global());
 
@@ -1595,19 +1504,20 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_InitializeConstGlobal) {
     return *value;
   }
 
-  // Set the value, but only we're assigning the initial value to a
+  // Set the value, but only if we're assigning the initial value to a
   // constant. For now, we determine this by checking if the
   // current value is the hole.
-  // Strict mode handling not needed (const disallowed in strict mode).
+  // Strict mode handling not needed (const is disallowed in strict mode).
   PropertyType type = lookup.type();
   if (type == FIELD) {
     FixedArray* properties = global->properties();
     int index = lookup.GetFieldIndex();
-    if (properties->get(index)->IsTheHole()) {
+    if (properties->get(index)->IsTheHole() || !lookup.IsReadOnly()) {
       properties->set(index, *value);
     }
   } else if (type == NORMAL) {
-    if (global->GetNormalizedProperty(&lookup)->IsTheHole()) {
+    if (global->GetNormalizedProperty(&lookup)->IsTheHole() ||
+        !lookup.IsReadOnly()) {
       global->SetNormalizedProperty(&lookup, *value);
     }
   } else {
@@ -2243,6 +2153,11 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_SetCode) {
     // are guaranteed to be in old space.
     target->set_literals(*literals, SKIP_WRITE_BARRIER);
     target->set_next_function_link(isolate->heap()->undefined_value());
+
+    if (isolate->logger()->is_logging() || CpuProfiler::is_profiling(isolate)) {
+      isolate->logger()->LogExistingFunction(
+          shared, Handle<Code>(shared->code()));
+    }
   }
 
   target->set_context(*context);
@@ -2888,7 +2803,7 @@ void FindStringIndicesDispatch(Isolate* isolate,
       }
     } else {
       Vector<const uc16> subject_vector = subject_content.ToUC16Vector();
-      if (pattern->IsAsciiRepresentation()) {
+      if (pattern_content.IsAscii()) {
         FindStringIndices(isolate,
                           subject_vector,
                           pattern_content.ToAsciiVector(),
@@ -8229,8 +8144,6 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NotifyDeoptimized) {
 
   if (type == Deoptimizer::EAGER) {
     RUNTIME_ASSERT(function->IsOptimized());
-  } else {
-    RUNTIME_ASSERT(!function->IsOptimized());
   }
 
   // Avoid doing too much work when running with --always-opt and keep
@@ -8249,8 +8162,6 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NotifyDeoptimized) {
     it.Advance();
   }
 
-  // TODO(kasperl): For now, we cannot support removing the optimized
-  // code when we have recursive invocations of the same function.
   if (activations == 0) {
     if (FLAG_trace_deopt) {
       PrintF("[removing optimized code for: ");
@@ -8258,6 +8169,8 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NotifyDeoptimized) {
       PrintF("]\n");
     }
     function->ReplaceCode(function->shared()->code());
+  } else {
+    Deoptimizer::DeoptimizeFunction(*function);
   }
   return isolate->heap()->undefined_value();
 }
@@ -9501,9 +9414,11 @@ class ArrayConcatVisitor {
         isolate_->factory()->NewNumber(static_cast<double>(index_offset_));
     Handle<Map> map;
     if (fast_elements_) {
-      map = isolate_->factory()->GetFastElementsMap(Handle<Map>(array->map()));
+      map = isolate_->factory()->GetElementsTransitionMap(array,
+                                                          FAST_ELEMENTS);
     } else {
-      map = isolate_->factory()->GetSlowElementsMap(Handle<Map>(array->map()));
+      map = isolate_->factory()->GetElementsTransitionMap(array,
+                                                          DICTIONARY_ELEMENTS);
     }
     array->set_map(*map);
     array->set_length(*length);
@@ -9994,15 +9909,17 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_MoveArrayContents) {
   CONVERT_CHECKED(JSArray, to, args[1]);
   FixedArrayBase* new_elements = from->elements();
   MaybeObject* maybe_new_map;
+  ElementsKind elements_kind;
   if (new_elements->map() == isolate->heap()->fixed_array_map() ||
       new_elements->map() == isolate->heap()->fixed_cow_array_map()) {
-    maybe_new_map = to->map()->GetFastElementsMap();
+    elements_kind = FAST_ELEMENTS;
   } else if (new_elements->map() ==
              isolate->heap()->fixed_double_array_map()) {
-    maybe_new_map = to->map()->GetFastDoubleElementsMap();
+    elements_kind = FAST_DOUBLE_ELEMENTS;
   } else {
-    maybe_new_map = to->map()->GetSlowElementsMap();
+    elements_kind = DICTIONARY_ELEMENTS;
   }
+  maybe_new_map = to->GetElementsTransitionMap(elements_kind);
   Object* new_map;
   if (!maybe_new_map->ToObject(&new_map)) return maybe_new_map;
   to->set_map(Map::cast(new_map));
@@ -11031,15 +10948,16 @@ class ScopeIterator {
       at_local_(false) {
 
     // Check whether the first scope is actually a local scope.
-    if (context_->IsGlobalContext()) {
-      // If there is a stack slot for .result then this local scope has been
-      // created for evaluating top level code and it is not a real local scope.
-      // Checking for the existence of .result seems fragile, but the scope info
-      // saved with the code object does not otherwise have that information.
-      int index = function_->shared()->scope_info()->
-          StackSlotIndex(isolate_->heap()->result_symbol());
-      at_local_ = index < 0;
-    } else if (context_->IsFunctionContext()) {
+    // If there is a stack slot for .result then this local scope has been
+    // created for evaluating top level code and it is not a real local scope.
+    // Checking for the existence of .result seems fragile, but the scope info
+    // saved with the code object does not otherwise have that information.
+    int index = function_->shared()->scope_info()->
+        StackSlotIndex(isolate_->heap()->result_symbol());
+    if (index >= 0) {
+      local_done_ = true;
+    } else if (context_->IsGlobalContext() ||
+               context_->IsFunctionContext()) {
       at_local_ = true;
     } else if (context_->closure() != *function_) {
       // The context_ is a block or with or catch block from the outer function.
@@ -11086,7 +11004,7 @@ class ScopeIterator {
   }
 
   // Return the type of the current scope.
-  int Type() {
+  ScopeType Type() {
     if (at_local_) {
       return ScopeTypeLocal;
     }
@@ -11962,6 +11880,8 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_DebugEvaluateGlobal) {
   Handle<Object> result =
     Execution::Call(compiled_function, receiver, 0, NULL,
                     &has_pending_exception);
+  // Clear the oneshot breakpoints so that the debugger does not step further.
+  isolate->debug()->ClearStepping();
   if (has_pending_exception) return Failure::Exception();
   return *result;
 }

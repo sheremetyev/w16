@@ -1,4 +1,4 @@
-// Copyright 2008 the V8 project authors. All rights reserved.
+// Copyright 2011 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,33 +25,20 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Check that dynamically introducing conflicting consts/vars
-// is silently ignored (and does not lead to exceptions).
+function strict() { 'use strict'; return this; }
+function lenient() { return this; }
+var obj = {};
 
-var caught = 0;
+assertEquals(true, strict.bind(true)());
+assertEquals(42, strict.bind(42)());
+assertEquals("", strict.bind("")());
+assertEquals(null, strict.bind(null)());
+assertEquals(undefined, strict.bind(undefined)());
+assertEquals(obj, strict.bind(obj)());
 
-eval("const a");
-try { eval("var a"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertTrue(typeof a == 'undefined');
-try { eval("var a = 1"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertTrue(typeof a == 'undefined');
-
-eval("const b = 0");
-try { eval("var b"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(0, b);
-try { eval("var b = 1"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(0, b);
-
-eval("var c");
-try { eval("const c"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertTrue(typeof c == 'undefined');
-try { eval("const c = 1"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(1, c);
-
-eval("var d = 0");
-try { eval("const d"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(undefined, d);
-try { eval("const d = 1"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(1, d);
-
-assertEquals(0, caught);
+assertEquals(true, lenient.bind(true)() instanceof Boolean);
+assertEquals(true, lenient.bind(42)() instanceof Number);
+assertEquals(true, lenient.bind("")() instanceof String);
+assertEquals(this, lenient.bind(null)());
+assertEquals(this, lenient.bind(undefined)());
+assertEquals(obj, lenient.bind(obj)());

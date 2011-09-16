@@ -237,6 +237,7 @@ MaybeObject* Object::GetPropertyWithHandler(Object* receiver_raw,
   // Extract trap function.
   Handle<String> trap_name = isolate->factory()->LookupAsciiSymbol("get");
   Handle<Object> trap(v8::internal::GetProperty(handler, trap_name));
+  if (isolate->has_pending_exception()) return Failure::Exception();
   if (trap->IsUndefined()) {
     // Get the derived `get' property.
     trap = isolate->derived_get_trap();
@@ -1998,17 +1999,32 @@ void Map::LookupInDescriptors(JSObject* holder,
 }
 
 
-MaybeObject* Map::GetElementsTransitionMap(ElementsKind elements_kind,
-                                           bool safe_to_add_transition) {
-  Heap* current_heap = heap();
-  DescriptorArray* descriptors = instance_descriptors();
+MaybeObject* JSObject::GetElementsTransitionMap(ElementsKind elements_kind) {
+  Heap* current_heap = GetHeap();
+  Map* current_map = map();
+  DescriptorArray* descriptors = current_map->instance_descriptors();
   String* elements_transition_sentinel_name = current_heap->empty_symbol();
+
+  if (current_map->elements_kind() == elements_kind) return current_map;
+
+  // Only objects with FastProperties can have DescriptorArrays and can track
+  // element-related maps. Also don't add descriptors to maps that are shared.
+  bool safe_to_add_transition = HasFastProperties() &&
+      !current_map->IsUndefined() &&
+      !current_map->is_shared();
+
+  // Prevent long chains of DICTIONARY -> FAST_ELEMENTS maps cause by objects
+  // with elements that switch back and forth between dictionary and fast
+  // element mode.
+  if ((current_map->elements_kind() == DICTIONARY_ELEMENTS &&
+       elements_kind == FAST_ELEMENTS)) {
+    safe_to_add_transition = false;
+  }
 
   if (safe_to_add_transition) {
     // It's only safe to manipulate the descriptor array if it would be
     // safe to add a transition.
 
-    ASSERT(!is_shared());  // no transitions can be added to shared maps.
     // Check if the elements transition already exists.
     DescriptorLookupCache* cache =
         current_heap->isolate()->descriptor_lookup_cache();
@@ -2036,13 +2052,12 @@ MaybeObject* Map::GetElementsTransitionMap(ElementsKind elements_kind,
   // No transition to an existing map for the given ElementsKind. Make a new
   // one.
   Object* obj;
-  { MaybeObject* maybe_map = CopyDropTransitions();
+  { MaybeObject* maybe_map = current_map->CopyDropTransitions();
     if (!maybe_map->ToObject(&obj)) return maybe_map;
   }
   Map* new_map = Map::cast(obj);
 
   new_map->set_elements_kind(elements_kind);
-  GetIsolate()->counters()->map_to_external_array_elements()->Increment();
 
   // Only remember the map transition if the object's map is NOT equal to the
   // global object_function's map and there is not an already existing
@@ -2064,7 +2079,7 @@ MaybeObject* Map::GetElementsTransitionMap(ElementsKind elements_kind,
       return maybe_new_descriptors;
     }
     descriptors = DescriptorArray::cast(new_descriptors);
-    set_instance_descriptors(descriptors);
+    current_map->set_instance_descriptors(descriptors);
   }
 
   return new_map;
@@ -2222,6 +2237,7 @@ bool JSProxy::HasPropertyWithHandler(String* name_raw) {
   // Extract trap function.
   Handle<String> trap_name = isolate->factory()->LookupAsciiSymbol("has");
   Handle<Object> trap(v8::internal::GetProperty(handler, trap_name));
+  if (isolate->has_pending_exception()) return Failure::Exception();
   if (trap->IsUndefined()) {
     trap = isolate->derived_has_trap();
   }
@@ -2252,6 +2268,7 @@ MUST_USE_RESULT MaybeObject* JSProxy::SetPropertyWithHandler(
   // Extract trap function.
   Handle<String> trap_name = isolate->factory()->LookupAsciiSymbol("set");
   Handle<Object> trap(v8::internal::GetProperty(handler, trap_name));
+  if (isolate->has_pending_exception()) return Failure::Exception();
   if (trap->IsUndefined()) {
     trap = isolate->derived_set_trap();
   }
@@ -2279,6 +2296,7 @@ MUST_USE_RESULT MaybeObject* JSProxy::DeletePropertyWithHandler(
   // Extract trap function.
   Handle<String> trap_name = isolate->factory()->LookupAsciiSymbol("delete");
   Handle<Object> trap(v8::internal::GetProperty(handler, trap_name));
+  if (isolate->has_pending_exception()) return Failure::Exception();
   if (trap->IsUndefined()) {
     Handle<Object> args[] = { handler, trap_name };
     Handle<Object> error = isolate->factory()->NewTypeError(
@@ -2321,6 +2339,7 @@ MUST_USE_RESULT PropertyAttributes JSProxy::GetPropertyAttributeWithHandler(
   Handle<String> trap_name =
       isolate->factory()->LookupAsciiSymbol("getPropertyDescriptor");
   Handle<Object> trap(v8::internal::GetProperty(handler, trap_name));
+  if (isolate->has_pending_exception()) return NONE;
   if (trap->IsUndefined()) {
     Handle<Object> args[] = { handler, trap_name };
     Handle<Object> error = isolate->factory()->NewTypeError(
@@ -2968,7 +2987,7 @@ MaybeObject* JSObject::NormalizeElements() {
     // Set the new map first to satify the elements type assert in
     // set_elements().
     Object* new_map;
-    MaybeObject* maybe = map()->GetSlowElementsMap();
+    MaybeObject* maybe = GetElementsTransitionMap(DICTIONARY_ELEMENTS);
     if (!maybe->ToObject(&new_map)) return maybe;
     set_map(Map::cast(new_map));
     set_elements(dictionary);
@@ -7276,7 +7295,7 @@ MaybeObject* JSObject::SetFastElementsCapacityAndLength(int capacity,
   Map* new_map = NULL;
   if (elements()->map() != heap->non_strict_arguments_elements_map()) {
     Object* object;
-    MaybeObject* maybe = map()->GetFastElementsMap();
+    MaybeObject* maybe = GetElementsTransitionMap(FAST_ELEMENTS);
     if (!maybe->ToObject(&object)) return maybe;
     new_map = Map::cast(object);
   }
@@ -7379,7 +7398,8 @@ MaybeObject* JSObject::SetFastDoubleElementsCapacityAndLength(
   }
   FixedDoubleArray* elems = FixedDoubleArray::cast(obj);
 
-  { MaybeObject* maybe_obj = map()->GetFastDoubleElementsMap();
+  { MaybeObject* maybe_obj =
+        GetElementsTransitionMap(FAST_DOUBLE_ELEMENTS);
     if (!maybe_obj->ToObject(&obj)) return maybe_obj;
   }
   Map* new_map = Map::cast(obj);
@@ -10136,7 +10156,7 @@ MaybeObject* JSObject::PrepareElementsForSort(uint32_t limit) {
     // Convert to fast elements.
 
     Object* obj;
-    { MaybeObject* maybe_obj = map()->GetFastElementsMap();
+    { MaybeObject* maybe_obj = GetElementsTransitionMap(FAST_ELEMENTS);
       if (!maybe_obj->ToObject(&obj)) return maybe_obj;
     }
     Map* new_map = Map::cast(obj);

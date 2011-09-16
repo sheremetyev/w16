@@ -1,4 +1,4 @@
-// Copyright 2008 the V8 project authors. All rights reserved.
+// Copyright 2011 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,33 +25,61 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Check that dynamically introducing conflicting consts/vars
-// is silently ignored (and does not lead to exceptions).
+// Flags: --expose-debug-as debug
+// Get the Debug object exposed from the debug context global object.
+Debug = debug.Debug
+var breaks = 0;
 
-var caught = 0;
+function sendCommand(state, cmd) {
+  // Get the debug command processor in paused state.
+  var dcp = state.debugCommandProcessor(false);
+  var request = JSON.stringify(cmd);
+  var response = dcp.processDebugJSONRequest(request);
+}
 
-eval("const a");
-try { eval("var a"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertTrue(typeof a == 'undefined');
-try { eval("var a = 1"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertTrue(typeof a == 'undefined');
+function listener(event, exec_state, event_data, data) {
+  try {
+    if (event == Debug.DebugEvent.Break) {
+      var line = event_data.sourceLineText();
+      print('break: ' + line);
 
-eval("const b = 0");
-try { eval("var b"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(0, b);
-try { eval("var b = 1"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(0, b);
+      assertEquals(-1, line.indexOf('NOBREAK'),
+                   "should not break on unexpected lines")
+      assertEquals('BREAK ' + breaks, line.substr(-7));
+      breaks++;
+      sendCommand(exec_state, {
+        seq: 0,
+        type: "request",
+        command: "continue",
+        arguments: { stepaction: "next" }
+      });
+    }
+  } catch (e) {
+    print(e);
+  }
+}
 
-eval("var c");
-try { eval("const c"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertTrue(typeof c == 'undefined');
-try { eval("const c = 1"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(1, c);
+// Add the debug event listener.
+Debug.setListener(listener);
 
-eval("var d = 0");
-try { eval("const d"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(undefined, d);
-try { eval("const d = 1"); } catch (e) { caught++; assertTrue(e instanceof TypeError); }
-assertEquals(1, d);
+function a(f) {
+  if (f) {  // NOBREAK: should not break here!
+    try {
+      f();
+    } catch(e) {
+    }
+  }
+}  // BREAK 2
 
-assertEquals(0, caught);
+function b() {
+  c();  // BREAK 0
+}  // BREAK 1
+
+function c() {
+  a();
+}
+
+// Set a break point and call to invoke the debug event listener.
+Debug.setBreakPoint(b, 0, 0);
+a(b);
+// BREAK 3
