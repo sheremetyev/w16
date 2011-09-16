@@ -31,7 +31,16 @@ class CellMap {
   }
 
   ~CellMap() {
-    // TODO: free blocks
+    Block* block = first_block_;
+
+    while (block != NULL) {
+      Block* next = block->next_;
+      free(block);
+      block = next;
+    }
+
+    first_block_ = NULL;
+    last_block_address_ = &first_block_;
   }
 
   void Iterate(ObjectVisitor* v) {
