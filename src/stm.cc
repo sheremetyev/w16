@@ -449,7 +449,7 @@ bool STM::CommitTransaction() {
 
   // for testing - abort each other transaction
   static bool even = true;
-  if (!even) {
+  if (!even && FLAG_stm_aborts) {
     trans->Abort();
   }
   even = ! even;

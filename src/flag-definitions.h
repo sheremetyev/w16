@@ -515,6 +515,7 @@ DEFINE_bool(print_builtin_code, false, "print generated code for builtins")
 // main.cc / stm.cc
 DEFINE_bool(stm, true, "run code in transactions (threads must be 1 otherwise)")
 DEFINE_int(threads, 1, "number of event loops to run in parallel")
+DEFINE_bool(stm_aborts, true, "abort each other transaction (for testing)")
 
 // Cleanup...
 #undef FLAG_FULL
