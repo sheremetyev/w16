@@ -80,6 +80,15 @@ ThreadLocalTop::ThreadLocalTop() {
   // not touch it to preserve its value.
   ignore_out_of_memory_ = false;
 
+  memset(isolate_addresses_, 0,
+      sizeof(isolate_addresses_[0]) * (kIsolateAddressCount + 1));
+
+#define ASSIGN_ELEMENT(CamelName, hacker_name)                  \
+  isolate_addresses_[ThreadLocalTop::k##CamelName##Address] =          \
+      reinterpret_cast<Address>(hacker_name##_address());
+  FOR_EACH_ISOLATE_ADDRESS_NAME(ASSIGN_ELEMENT)
+#undef C
+
 #define THREAD_INIT_EXECUTE(type, name, initial_value)                        \
   name##_ = (initial_value);
   THREAD_INIT_LIST(THREAD_INIT_EXECUTE)
@@ -385,7 +394,7 @@ void Isolate::EnterDefaultIsolate() {
 
 
 Address Isolate::get_address_from_id(Isolate::AddressId id) {
-  return isolate_addresses_[id];
+  return thread_local_top()->get_address_from_id((ThreadLocalTop::AddressId)id);
 }
 
 
@@ -1284,9 +1293,6 @@ Isolate::Isolate()
       embedder_data_(NULL) {
   TRACE_ISOLATE(constructor);
 
-  memset(isolate_addresses_, 0,
-      sizeof(isolate_addresses_[0]) * (kIsolateAddressCount + 1));
-
   heap_.isolate_ = this;
   stm_.isolate_ = this;
   zone_.isolate_ = this;
@@ -1528,12 +1534,6 @@ bool Isolate::Init(Deserializer* des) {
   // Safe after setting Heap::isolate_, initializing StackGuard and
   // ensuring that Isolate::Current() == this.
   heap_.SetStackLimits();
-
-#define ASSIGN_ELEMENT(CamelName, hacker_name)                  \
-  isolate_addresses_[Isolate::k##CamelName##Address] =          \
-      reinterpret_cast<Address>(hacker_name##_address());
-  FOR_EACH_ISOLATE_ADDRESS_NAME(ASSIGN_ELEMENT)
-#undef C
 
   string_tracker_ = new StringTracker();
   string_tracker_->isolate_ = this;

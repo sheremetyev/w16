@@ -373,6 +373,24 @@ class ThreadLocalTop {
 
   // BEGIN: MOVED FROM ISOLATE
 
+  enum AddressId {
+#define DECLARE_ENUM(CamelName, hacker_name) k##CamelName##Address,
+    FOR_EACH_ISOLATE_ADDRESS_NAME(DECLARE_ENUM)
+#undef DECLARE_ENUM
+    kIsolateAddressCount
+  };
+
+  inline Address* c_entry_fp_address() { return &c_entry_fp_; }
+  inline Address* handler_address() { return &handler_; }
+  inline Address* js_entry_sp_address() { return &js_entry_sp_; }
+  inline Context** context_address() { return &context_; }
+  inline MaybeObject** pending_exception_address() { return &pending_exception_; }
+  inline bool* external_caught_exception_address() { return &external_caught_exception_; }
+
+  Address get_address_from_id(AddressId id) {
+    return isolate_addresses_[id];
+  }
+
   static const int kPartialSnapshotCacheCapacity = 1400;
   static const int kJSRegexpStaticOffsetsVectorSize = 50;
   static const int kUC16AlphabetSize = 256;  // See StringSearchBase.
@@ -408,6 +426,8 @@ class ThreadLocalTop {
 
   // BEGIN: MOVED FROM ISOLATE
 
+  Address isolate_addresses_[kIsolateAddressCount + 1];  // NOLINT
+
 #define THREAD_BACKING_STORE(type, name, initialvalue)                         \
   type name##_;
   THREAD_INIT_LIST(THREAD_BACKING_STORE)
@@ -439,10 +459,11 @@ class Isolate {
   ~Isolate();
 
   enum AddressId {
-#define DECLARE_ENUM(CamelName, hacker_name) k##CamelName##Address,
+#define DECLARE_ENUM(CamelName, hacker_name) k##CamelName##Address =           \
+      ThreadLocalTop::k##CamelName##Address,
     FOR_EACH_ISOLATE_ADDRESS_NAME(DECLARE_ENUM)
-#undef C
-    kIsolateAddressCount
+#undef DECLARE_ENUM
+    kIsolateAddressCount = ThreadLocalTop::kIsolateAddressCount
   };
 
   // Returns the isolate inside which the current thread is running.
@@ -529,7 +550,9 @@ class Isolate {
     ASSERT(context == NULL || context->IsContext());
     thread_local_top()->context_ = context;
   }
-  Context** context_address() { return &thread_local_top()->context_; }
+  Context** context_address() {
+    return thread_local_top()->context_address();
+  }
 
   SaveContext* save_context() {return thread_local_top()->save_context_; }
   void set_save_context(SaveContext* save) {
@@ -557,7 +580,7 @@ class Isolate {
     thread_local_top()->pending_exception_ = heap_.the_hole_value();
   }
   MaybeObject** pending_exception_address() {
-    return &thread_local_top()->pending_exception_;
+    return thread_local_top()->pending_exception_address();
   }
   bool has_pending_exception() {
     return !thread_local_top()->pending_exception_->IsTheHole();
@@ -574,7 +597,7 @@ class Isolate {
     return thread_local_top()->try_catch_handler_address();
   }
   bool* external_caught_exception_address() {
-    return &thread_local_top()->external_caught_exception_;
+    return thread_local_top()->external_caught_exception_address();
   }
   v8::TryCatch* catcher() {
     return thread_local_top()->catcher_;
@@ -611,16 +634,18 @@ class Isolate {
   static Address handler(ThreadLocalTop* thread) { return thread->handler_; }
 
   inline Address* c_entry_fp_address() {
-    return &thread_local_top()->c_entry_fp_;
+    return thread_local_top()->c_entry_fp_address();
   }
-  inline Address* handler_address() { return &thread_local_top()->handler_; }
+  inline Address* handler_address() {
+    return thread_local_top()->handler_address();
+  }
 
   // Bottom JS entry (see StackTracer::Trace in log.cc).
   static Address js_entry_sp(ThreadLocalTop* thread) {
     return thread->js_entry_sp_;
   }
   inline Address* js_entry_sp_address() {
-    return &thread_local_top()->js_entry_sp_;
+    return thread_local_top()->js_entry_sp_address();
   }
 
   // Generated code scratch locations.
@@ -1065,7 +1090,6 @@ class Isolate {
   StringStream* incomplete_message_;
   // The preallocated memory thread singleton.
   PreallocatedMemoryThread* preallocated_memory_thread_;
-  Address isolate_addresses_[kIsolateAddressCount + 1];  // NOLINT
   NoAllocationStringAllocator* preallocated_message_space_;
 
   Bootstrapper* bootstrapper_;
