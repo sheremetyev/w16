@@ -1055,10 +1055,6 @@ class Isolate {
 
   State state_;
 
-  // PreInits and returns a default isolate. Needed when a new thread tries
-  // to create a Locker for the first time (the lock itself is in the isolate).
-  static Isolate* GetDefaultIsolateForLocking();
-
   // Initializes the current thread to run this Isolate.
   // Not thread-safe. Multiple threads should not Enter/Exit the same isolate
   // at the same time, this should be prevented using external locking.
