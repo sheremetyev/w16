@@ -173,95 +173,6 @@ class ThreadId {
 };
 
 
-class ThreadLocalTop {
- public:
-  // Does early low-level initialization that does not depend on the
-  // isolate being present.
-  ThreadLocalTop();
-
-  // Initialize the thread data.
-  void Initialize(Isolate* isolate);
-
-  // Get the top C++ try catch handler or NULL if none are registered.
-  //
-  // This method is not guarenteed to return an address that can be
-  // used for comparison with addresses into the JS stack.  If such an
-  // address is needed, use try_catch_handler_address.
-  v8::TryCatch* TryCatchHandler();
-
-  // Get the address of the top C++ try catch handler or NULL if
-  // none are registered.
-  //
-  // This method always returns an address that can be compared to
-  // pointers into the JavaScript stack.  When running on actual
-  // hardware, try_catch_handler_address and TryCatchHandler return
-  // the same pointer.  When running on a simulator with a separate JS
-  // stack, try_catch_handler_address returns a JS stack address that
-  // corresponds to the place on the JS stack where the C++ handler
-  // would have been if the stack were not separate.
-  inline Address try_catch_handler_address() {
-    return try_catch_handler_address_;
-  }
-
-  // Set the address of the top C++ try catch handler.
-  inline void set_try_catch_handler_address(Address address) {
-    try_catch_handler_address_ = address;
-  }
-
-  void Free() {
-    ASSERT(!has_pending_message_);
-    ASSERT(!external_caught_exception_);
-    ASSERT(try_catch_handler_address_ == NULL);
-  }
-
-  Isolate* isolate_;
-  // The context where the current execution method is created and for variable
-  // lookups.
-  Context* context_;
-  ThreadId thread_id_;
-  MaybeObject* pending_exception_;
-  bool has_pending_message_;
-  Object* pending_message_obj_;
-  Script* pending_message_script_;
-  int pending_message_start_pos_;
-  int pending_message_end_pos_;
-  // Use a separate value for scheduled exceptions to preserve the
-  // invariants that hold about pending_exception.  We may want to
-  // unify them later.
-  MaybeObject* scheduled_exception_;
-  bool external_caught_exception_;
-  SaveContext* save_context_;
-  v8::TryCatch* catcher_;
-
-  // Stack.
-  Address c_entry_fp_;  // the frame pointer of the top c entry frame
-  Address handler_;   // try-blocks are chained through the stack
-
-#ifdef USE_SIMULATOR
-#if defined(V8_TARGET_ARCH_ARM) || defined(V8_TARGET_ARCH_MIPS)
-  Simulator* simulator_;
-#endif
-#endif  // USE_SIMULATOR
-
-  Address js_entry_sp_;  // the stack pointer of the bottom js entry frame
-  Address external_callback_;  // the external callback we're currently in
-  StateTag current_vm_state_;
-
-  // Generated code scratch locations.
-  int32_t formal_count_;
-
-  // Call back function to report unsafe JS accesses.
-  v8::FailedAccessCheckCallback failed_access_check_callback_;
-
-  // Whether out of memory exceptions should be ignored.
-  bool ignore_out_of_memory_;
-
- private:
-  void InitializeInternal();
-
-  Address try_catch_handler_address_;
-};
-
 #if defined(V8_TARGET_ARCH_ARM) || defined(V8_TARGET_ARCH_MIPS)
 
 #define ISOLATE_PLATFORM_INIT_LIST(V)                                          \
@@ -354,6 +265,97 @@ typedef List<HeapObject*, PreallocatedStorage> DebugObjectCache;
   V(HeapProfiler*, heap_profiler, NULL)                                        \
   ISOLATE_PLATFORM_INIT_LIST(V)                                                \
   ISOLATE_DEBUGGER_INIT_LIST(V)
+
+
+class ThreadLocalTop {
+ public:
+  // Does early low-level initialization that does not depend on the
+  // isolate being present.
+  ThreadLocalTop();
+
+  // Initialize the thread data.
+  void Initialize(Isolate* isolate);
+
+  // Get the top C++ try catch handler or NULL if none are registered.
+  //
+  // This method is not guarenteed to return an address that can be
+  // used for comparison with addresses into the JS stack.  If such an
+  // address is needed, use try_catch_handler_address.
+  v8::TryCatch* TryCatchHandler();
+
+  // Get the address of the top C++ try catch handler or NULL if
+  // none are registered.
+  //
+  // This method always returns an address that can be compared to
+  // pointers into the JavaScript stack.  When running on actual
+  // hardware, try_catch_handler_address and TryCatchHandler return
+  // the same pointer.  When running on a simulator with a separate JS
+  // stack, try_catch_handler_address returns a JS stack address that
+  // corresponds to the place on the JS stack where the C++ handler
+  // would have been if the stack were not separate.
+  inline Address try_catch_handler_address() {
+    return try_catch_handler_address_;
+  }
+
+  // Set the address of the top C++ try catch handler.
+  inline void set_try_catch_handler_address(Address address) {
+    try_catch_handler_address_ = address;
+  }
+
+  void Free() {
+    ASSERT(!has_pending_message_);
+    ASSERT(!external_caught_exception_);
+    ASSERT(try_catch_handler_address_ == NULL);
+  }
+
+  Isolate* isolate_;
+  // The context where the current execution method is created and for variable
+  // lookups.
+  Context* context_;
+  ThreadId thread_id_;
+  MaybeObject* pending_exception_;
+  bool has_pending_message_;
+  Object* pending_message_obj_;
+  Script* pending_message_script_;
+  int pending_message_start_pos_;
+  int pending_message_end_pos_;
+  // Use a separate value for scheduled exceptions to preserve the
+  // invariants that hold about pending_exception.  We may want to
+  // unify them later.
+  MaybeObject* scheduled_exception_;
+  bool external_caught_exception_;
+  SaveContext* save_context_;
+  v8::TryCatch* catcher_;
+
+  // Stack.
+  Address c_entry_fp_;  // the frame pointer of the top c entry frame
+  Address handler_;   // try-blocks are chained through the stack
+
+#ifdef USE_SIMULATOR
+#if defined(V8_TARGET_ARCH_ARM) || defined(V8_TARGET_ARCH_MIPS)
+  Simulator* simulator_;
+#endif
+#endif  // USE_SIMULATOR
+
+  Address js_entry_sp_;  // the stack pointer of the bottom js entry frame
+  Address external_callback_;  // the external callback we're currently in
+  StateTag current_vm_state_;
+
+  // Generated code scratch locations.
+  int32_t formal_count_;
+
+  // Call back function to report unsafe JS accesses.
+  v8::FailedAccessCheckCallback failed_access_check_callback_;
+
+  // Whether out of memory exceptions should be ignored.
+  bool ignore_out_of_memory_;
+
+ private:
+  void InitializeInternal();
+
+  Address try_catch_handler_address_;
+};
+
 
 class Isolate {
  public:
