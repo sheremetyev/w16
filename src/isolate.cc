@@ -307,6 +307,7 @@ void Isolate::PreallocatedStorageDelete(void* p) {
 
 Isolate* Isolate::default_isolate_ = NULL;
 Thread::LocalStorageKey Isolate::isolate_key_;
+Thread::LocalStorageKey Isolate::thread_local_top_key_;
 Thread::LocalStorageKey Isolate::thread_id_key_;
 Mutex* Isolate::process_wide_mutex_ = OS::CreateMutex();
 
@@ -332,6 +333,7 @@ void Isolate::EnsureDefaultIsolate() {
   ScopedLock lock(process_wide_mutex_);
   if (default_isolate_ == NULL) {
     isolate_key_ = Thread::CreateThreadLocalKey();
+    thread_local_top_key_ = Thread::CreateThreadLocalKey();
     thread_id_key_ = Thread::CreateThreadLocalKey();
     default_isolate_ = new Isolate();
   }
@@ -1626,14 +1628,16 @@ StatsTable* Isolate::stats_table() {
 
 void Isolate::Enter() {
   SetIsolateThreadLocals(this);
-  thread_local_top_ = new ThreadLocalTop();
-  thread_local_top_->Initialize(this);
+  ThreadLocalTop* top = new ThreadLocalTop();
+  top->Initialize(this);
+  Thread::SetThreadLocal(thread_local_top_key_, top);
 }
 
 
 void Isolate::Exit() {
-  delete thread_local_top_;
-  thread_local_top_ = NULL;
+  ThreadLocalTop* top = thread_local_top();
+  delete top;
+  Thread::SetThreadLocal(thread_local_top_key_, NULL);
   SetIsolateThreadLocals(NULL);
 }
 

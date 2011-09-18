@@ -728,7 +728,12 @@ class Isolate {
   StatsTable* stats_table();
   StubCache* stub_cache() { return stub_cache_; }
   DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
-  ThreadLocalTop* thread_local_top() { return thread_local_top_; }
+  ThreadLocalTop* thread_local_top() {
+    ThreadLocalTop* top = reinterpret_cast<ThreadLocalTop*>(
+        Thread::GetExistingThreadLocal(thread_local_top_key_));
+    ASSERT_NOT_NULL(top);
+    return top;
+  }
 
   Transaction* get_transaction() const { return transaction_; }
   void set_transaction(Transaction* transaction) { transaction_ = transaction; }
@@ -912,6 +917,7 @@ class Isolate {
   static Mutex* process_wide_mutex_;
 
   static Thread::LocalStorageKey isolate_key_;
+  static Thread::LocalStorageKey thread_local_top_key_;  
   static Thread::LocalStorageKey thread_id_key_;
   static Isolate* default_isolate_;
 
@@ -980,7 +986,6 @@ class Isolate {
   StatsTable* stats_table_;
   StubCache* stub_cache_;
   DeoptimizerData* deoptimizer_data_;
-  ThreadLocalTop* thread_local_top_;
   bool capture_stack_trace_for_uncaught_exceptions_;
   int stack_trace_for_uncaught_exceptions_frame_limit_;
   StackTrace::StackTraceOptions stack_trace_for_uncaught_exceptions_options_;
