@@ -198,6 +198,8 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  Isolate::Scope isolate_scope(Isolate::GetCurrent());
+
   V8::Initialize();
 
   // create a stack-allocated handle scope

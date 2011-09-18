@@ -175,7 +175,9 @@ class ThreadId {
 
 #if defined(V8_TARGET_ARCH_ARM) || defined(V8_TARGET_ARCH_MIPS)
 
-#define ISOLATE_PLATFORM_INIT_LIST(V)                                          \
+#define ISOLATE_PLATFORM_INIT_LIST(V)
+
+#define THREAD_PLATFORM_INIT_LIST(V)                                           \
   /* VirtualFrame::SpilledScope state */                                       \
   V(bool, is_virtual_frame_in_spilled_scope, false)                            \
   /* CodeGenerator::EmitNamedStore state */                                    \
@@ -189,31 +191,44 @@ class HashMap;
 
 #define ISOLATE_PLATFORM_INIT_LIST(V)
 
+#define THREAD_PLATFORM_INIT_LIST(V)
+
 #endif
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
 
-#define ISOLATE_DEBUGGER_INIT_LIST(V)                                          \
+#define ISOLATE_DEBUGGER_INIT_LIST(V)
+
+#define THREAD_DEBUGGER_INIT_LIST(V)                                           \
   V(v8::Debug::EventCallback, debug_event_callback, NULL)                      \
   V(DebuggerAgent*, debugger_agent_instance, NULL)
 #else
 
 #define ISOLATE_DEBUGGER_INIT_LIST(V)
 
+#define THREAD_DEBUGGER_INIT_LIST(V)
+
 #endif
 
 #ifdef DEBUG
 
 #define ISOLATE_INIT_DEBUG_ARRAY_LIST(V)                                       \
+
+#define THREAD_INIT_DEBUG_ARRAY_LIST(V)                                        \
   V(CommentStatistic, paged_space_comments_statistics,                         \
       CommentStatistic::kMaxComments + 1)
 #else
 
 #define ISOLATE_INIT_DEBUG_ARRAY_LIST(V)
 
+#define THREAD_INIT_DEBUG_ARRAY_LIST(V)
+
 #endif
 
 #define ISOLATE_INIT_ARRAY_LIST(V)                                             \
+  ISOLATE_INIT_DEBUG_ARRAY_LIST(V)
+
+#define THREAD_INIT_ARRAY_LIST(V)                                              \
   /* SerializerDeserializer state. */                                          \
   V(Object*, serialize_partial_snapshot_cache, kPartialSnapshotCacheCapacity)  \
   V(int, jsregexp_static_offsets_vector, kJSRegexpStaticOffsetsVectorSize)     \
@@ -222,11 +237,15 @@ class HashMap;
   V(int, suffix_table, (kBMMaxShift + 1))                                      \
   V(uint32_t, random_seed, 2)                                                  \
   V(uint32_t, private_random_seed, 2)                                          \
-  ISOLATE_INIT_DEBUG_ARRAY_LIST(V)
+  THREAD_INIT_DEBUG_ARRAY_LIST(V)
 
 typedef List<HeapObject*, PreallocatedStorage> DebugObjectCache;
 
 #define ISOLATE_INIT_LIST(V)                                                   \
+  ISOLATE_PLATFORM_INIT_LIST(V)                                                \
+  ISOLATE_DEBUGGER_INIT_LIST(V)
+
+#define THREAD_INIT_LIST(V)                                                   \
   /* AssertNoZoneAllocation state. */                                          \
   V(bool, zone_allow_allocation, true)                                         \
   /* SerializerDeserializer state. */                                          \
@@ -263,8 +282,8 @@ typedef List<HeapObject*, PreallocatedStorage> DebugObjectCache;
   V(uint64_t, enabled_cpu_features, 0)                                         \
   V(CpuProfiler*, cpu_profiler, NULL)                                          \
   V(HeapProfiler*, heap_profiler, NULL)                                        \
-  ISOLATE_PLATFORM_INIT_LIST(V)                                                \
-  ISOLATE_DEBUGGER_INIT_LIST(V)
+  THREAD_PLATFORM_INIT_LIST(V)                                                 \
+  THREAD_DEBUGGER_INIT_LIST(V)
 
 
 class ThreadLocalTop {
@@ -272,6 +291,8 @@ class ThreadLocalTop {
   // Does early low-level initialization that does not depend on the
   // isolate being present.
   ThreadLocalTop();
+
+  ~ThreadLocalTop();
 
   // Initialize the thread data.
   void Initialize(Isolate* isolate);
@@ -350,10 +371,66 @@ class ThreadLocalTop {
   // Whether out of memory exceptions should be ignored.
   bool ignore_out_of_memory_;
 
+  // BEGIN: MOVED FROM ISOLATE
+
+  static const int kPartialSnapshotCacheCapacity = 1400;
+  static const int kJSRegexpStaticOffsetsVectorSize = 50;
+  static const int kUC16AlphabetSize = 256;  // See StringSearchBase.
+  static const int kBMMaxShift = 250;        // See StringSearchBase.
+
+  // Accessors.
+#define THREAD_ACCESSOR(type, name, initialvalue)                              \
+  inline type name() const {                                                   \
+    ASSERT(OFFSET_OF(ThreadLocalTop, name##_) == name##_thread_debug_offset_); \
+    return name##_;                                                            \
+  }                                                                            \
+  inline void set_##name(type value) {                                         \
+    ASSERT(OFFSET_OF(ThreadLocalTop, name##_) == name##_thread_debug_offset_); \
+    name##_ = value;                                                           \
+  }
+  THREAD_INIT_LIST(THREAD_ACCESSOR)
+#undef THREAD_ACCESSOR
+
+#define THREAD_ARRAY_ACCESSOR(type, name, length)                              \
+  inline type* name() {                                                        \
+    ASSERT(OFFSET_OF(ThreadLocalTop, name##_) == name##_thread_debug_offset_); \
+    return &(name##_)[0];                                                      \
+  }
+  THREAD_INIT_ARRAY_LIST(THREAD_ARRAY_ACCESSOR)
+#undef THREAD_ARRAY_ACCESSOR
+
+  // END: MOVED FROM ISOLATE
+
  private:
   void InitializeInternal();
 
   Address try_catch_handler_address_;
+
+  // BEGIN: MOVED FROM ISOLATE
+
+#define THREAD_BACKING_STORE(type, name, initialvalue)                         \
+  type name##_;
+  THREAD_INIT_LIST(THREAD_BACKING_STORE)
+#undef THREAD_BACKING_STORE
+
+#define THREAD_ARRAY_BACKING_STORE(type, name, length)                         \
+  type name##_[length];
+  THREAD_INIT_ARRAY_LIST(THREAD_ARRAY_BACKING_STORE)
+#undef THREAD_ARRAY_BACKING_STORE
+
+#ifdef DEBUG
+  // This class is huge and has a number of fields controlled by
+  // preprocessor defines. Make sure the offsets of these fields agree
+  // between compilation units.
+#define THREAD_FIELD_OFFSET(type, name, ignored)                              \
+  static const intptr_t name##_thread_debug_offset_;
+  THREAD_INIT_LIST(THREAD_FIELD_OFFSET)
+  THREAD_INIT_ARRAY_LIST(THREAD_FIELD_OFFSET)
+#undef THREAD_FIELD_OFFSET
+#endif
+
+  // END: MOVED FROM ISOLATE
+
 };
 
 
@@ -677,8 +754,8 @@ class Isolate {
 
   static const char* const kStackOverflowMessage;
 
-  static const int kUC16AlphabetSize = 256;  // See StringSearchBase.
-  static const int kBMMaxShift = 250;        // See StringSearchBase.
+  static const int kUC16AlphabetSize = ThreadLocalTop::kUC16AlphabetSize;
+  static const int kBMMaxShift = ThreadLocalTop::kBMMaxShift;
 
   // Accessors.
 #define GLOBAL_ACCESSOR(type, name, initialvalue)                       \
@@ -693,6 +770,16 @@ class Isolate {
   ISOLATE_INIT_LIST(GLOBAL_ACCESSOR)
 #undef GLOBAL_ACCESSOR
 
+#define THREAD_ACCESSOR(type, name, initialvalue)                       \
+  inline type name() const {                                            \
+    return thread_local_top()->name();                                  \
+  }                                                                     \
+  inline void set_##name(type value) {                                  \
+    thread_local_top()->set_##name(value);                              \
+  }
+  THREAD_INIT_LIST(THREAD_ACCESSOR)
+#undef THREAD_ACCESSOR
+
 #define GLOBAL_ARRAY_ACCESSOR(type, name, length)                       \
   inline type* name() {                                                 \
     ASSERT(OFFSET_OF(Isolate, name##_) == name##_debug_offset_);        \
@@ -700,6 +787,13 @@ class Isolate {
   }
   ISOLATE_INIT_ARRAY_LIST(GLOBAL_ARRAY_ACCESSOR)
 #undef GLOBAL_ARRAY_ACCESSOR
+
+#define THREAD_ARRAY_ACCESSOR(type, name, length)                       \
+  inline type* name() {                                                 \
+    return thread_local_top()->name();                                  \
+  }
+  THREAD_INIT_ARRAY_LIST(THREAD_ARRAY_ACCESSOR)
+#undef THREAD_ARRAY_ACCESSOR
 
 #define GLOBAL_CONTEXT_FIELD_ACCESSOR(index, type, name)      \
   Handle<type> name() {                                       \
@@ -730,7 +824,7 @@ class Isolate {
   StatsTable* stats_table();
   StubCache* stub_cache() { return stub_cache_; }
   DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
-  ThreadLocalTop* thread_local_top() {
+  ThreadLocalTop* thread_local_top() const {
     ThreadLocalTop* top = reinterpret_cast<ThreadLocalTop*>(
         Thread::GetExistingThreadLocal(thread_local_top_key_));
     ASSERT_NOT_NULL(top);
@@ -871,9 +965,11 @@ class Isolate {
   Factory* factory() { return reinterpret_cast<Factory*>(this); }
 
   // SerializerDeserializer state.
-  static const int kPartialSnapshotCacheCapacity = 1400;
+  static const int kPartialSnapshotCacheCapacity =
+    ThreadLocalTop::kPartialSnapshotCacheCapacity;
 
-  static const int kJSRegexpStaticOffsetsVectorSize = 50;
+  static const int kJSRegexpStaticOffsetsVectorSize =
+    ThreadLocalTop::kJSRegexpStaticOffsetsVectorSize;
 
   Address external_callback() {
     return thread_local_top()->external_callback_;

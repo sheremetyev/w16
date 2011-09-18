@@ -79,6 +79,25 @@ ThreadLocalTop::ThreadLocalTop() {
   // before an isolate is initialized. The initialize methods below do
   // not touch it to preserve its value.
   ignore_out_of_memory_ = false;
+
+#define THREAD_INIT_EXECUTE(type, name, initial_value)                        \
+  name##_ = (initial_value);
+  THREAD_INIT_LIST(THREAD_INIT_EXECUTE)
+#undef THREAD_INIT_EXECUTE
+
+#define THREAD_INIT_ARRAY_EXECUTE(type, name, length)                         \
+  memset(name##_, 0, sizeof(type) * length);
+  THREAD_INIT_ARRAY_LIST(THREAD_INIT_ARRAY_EXECUTE)
+#undef THREAD_INIT_ARRAY_EXECUTE
+}
+
+
+ThreadLocalTop::~ThreadLocalTop() {
+  delete[] assembler_spare_buffer_;
+  assembler_spare_buffer_ = NULL;
+
+  delete external_reference_table_;
+  external_reference_table_ = NULL;
 }
 
 
@@ -1372,9 +1391,6 @@ Isolate::~Isolate() {
   // Has to be called while counters_ are still alive.
   zone_.DeleteKeptSegment();
 
-  delete[] assembler_spare_buffer_;
-  assembler_spare_buffer_ = NULL;
-
   delete unicode_cache_;
   unicode_cache_ = NULL;
 
@@ -1426,9 +1442,6 @@ Isolate::~Isolate() {
   code_range_ = NULL;
   delete global_handles_;
   global_handles_ = NULL;
-
-  delete external_reference_table_;
-  external_reference_table_ = NULL;
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
   delete debugger_;
@@ -1648,6 +1661,13 @@ const intptr_t Isolate::name##_debug_offset_ = OFFSET_OF(Isolate, name##_);
 ISOLATE_INIT_LIST(ISOLATE_FIELD_OFFSET)
 ISOLATE_INIT_ARRAY_LIST(ISOLATE_FIELD_OFFSET)
 #undef ISOLATE_FIELD_OFFSET
+
+#define THREAD_FIELD_OFFSET(type, name, ignored)                       \
+const intptr_t ThreadLocalTop::name##_thread_debug_offset_ =           \
+  OFFSET_OF(ThreadLocalTop, name##_);
+THREAD_INIT_LIST(THREAD_FIELD_OFFSET)
+THREAD_INIT_ARRAY_LIST(THREAD_FIELD_OFFSET)
+#undef THREAD_FIELD_OFFSET
 #endif
 
 } }  // namespace v8::internal
