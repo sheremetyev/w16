@@ -173,14 +173,14 @@ class ThreadId {
 };
 
 
-class ThreadLocalTop BASE_EMBEDDED {
+class ThreadLocalTop {
  public:
   // Does early low-level initialization that does not depend on the
   // isolate being present.
   ThreadLocalTop();
 
   // Initialize the thread data.
-  void Initialize();
+  void Initialize(Isolate* isolate);
 
   // Get the top C++ try catch handler or NULL if none are registered.
   //
@@ -445,78 +445,77 @@ class Isolate {
   Address get_address_from_id(AddressId id);
 
   // Access to top context (where the current function object was created).
-  Context* context() { return thread_local_top_.context_; }
+  Context* context() { return thread_local_top()->context_; }
   void set_context(Context* context) {
     ASSERT(context == NULL || context->IsContext());
-    thread_local_top_.context_ = context;
+    thread_local_top()->context_ = context;
   }
-  Context** context_address() { return &thread_local_top_.context_; }
+  Context** context_address() { return &thread_local_top()->context_; }
 
-  SaveContext* save_context() {return thread_local_top_.save_context_; }
+  SaveContext* save_context() {return thread_local_top()->save_context_; }
   void set_save_context(SaveContext* save) {
-    thread_local_top_.save_context_ = save;
+    thread_local_top()->save_context_ = save;
   }
 
   // Access to current thread id.
-  ThreadId thread_id() { return thread_local_top_.thread_id_; }
-  void set_thread_id(ThreadId id) { thread_local_top_.thread_id_ = id; }
+  ThreadId thread_id() { return thread_local_top()->thread_id_; }
 
   // Interface to pending exception.
   MaybeObject* pending_exception() {
     ASSERT(has_pending_exception());
-    return thread_local_top_.pending_exception_;
+    return thread_local_top()->pending_exception_;
   }
   bool external_caught_exception() {
-    return thread_local_top_.external_caught_exception_;
+    return thread_local_top()->external_caught_exception_;
   }
   void set_external_caught_exception(bool value) {
-    thread_local_top_.external_caught_exception_ = value;
+    thread_local_top()->external_caught_exception_ = value;
   }
   void set_pending_exception(MaybeObject* exception) {
-    thread_local_top_.pending_exception_ = exception;
+    thread_local_top()->pending_exception_ = exception;
   }
   void clear_pending_exception() {
-    thread_local_top_.pending_exception_ = heap_.the_hole_value();
+    thread_local_top()->pending_exception_ = heap_.the_hole_value();
   }
   MaybeObject** pending_exception_address() {
-    return &thread_local_top_.pending_exception_;
+    return &thread_local_top()->pending_exception_;
   }
   bool has_pending_exception() {
-    return !thread_local_top_.pending_exception_->IsTheHole();
+    return !thread_local_top()->pending_exception_->IsTheHole();
   }
   void clear_pending_message() {
-    thread_local_top_.has_pending_message_ = false;
-    thread_local_top_.pending_message_obj_ = heap_.the_hole_value();
-    thread_local_top_.pending_message_script_ = NULL;
+    thread_local_top()->has_pending_message_ = false;
+    thread_local_top()->pending_message_obj_ = heap_.the_hole_value();
+    thread_local_top()->pending_message_script_ = NULL;
   }
   v8::TryCatch* try_catch_handler() {
-    return thread_local_top_.TryCatchHandler();
+    return thread_local_top()->TryCatchHandler();
   }
   Address try_catch_handler_address() {
-    return thread_local_top_.try_catch_handler_address();
+    return thread_local_top()->try_catch_handler_address();
   }
   bool* external_caught_exception_address() {
-    return &thread_local_top_.external_caught_exception_;
+    return &thread_local_top()->external_caught_exception_;
   }
   v8::TryCatch* catcher() {
-    return thread_local_top_.catcher_;
+    return thread_local_top()->catcher_;
   }
   void set_catcher(v8::TryCatch* catcher) {
-    thread_local_top_.catcher_ = catcher;
+    thread_local_top()->catcher_ = catcher;
   }
 
   MaybeObject** scheduled_exception_address() {
-    return &thread_local_top_.scheduled_exception_;
+    return &thread_local_top()->scheduled_exception_;
   }
   MaybeObject* scheduled_exception() {
     ASSERT(has_scheduled_exception());
-    return thread_local_top_.scheduled_exception_;
+    return thread_local_top()->scheduled_exception_;
   }
   bool has_scheduled_exception() {
-    return thread_local_top_.scheduled_exception_ != heap_.the_hole_value();
+    return thread_local_top()->scheduled_exception_ != heap_.the_hole_value();
   }
   void clear_scheduled_exception() {
-    thread_local_top_.scheduled_exception_ = heap_.the_hole_value();
+    thread_local_top()->scheduled_exception_ = heap_.the_hole_value();
   }
 
   bool IsExternallyCaught();
@@ -533,20 +532,20 @@ class Isolate {
   static Address handler(ThreadLocalTop* thread) { return thread->handler_; }
 
   inline Address* c_entry_fp_address() {
-    return &thread_local_top_.c_entry_fp_;
+    return &thread_local_top()->c_entry_fp_;
   }
-  inline Address* handler_address() { return &thread_local_top_.handler_; }
+  inline Address* handler_address() { return &thread_local_top()->handler_; }
 
   // Bottom JS entry (see StackTracer::Trace in log.cc).
   static Address js_entry_sp(ThreadLocalTop* thread) {
     return thread->js_entry_sp_;
   }
   inline Address* js_entry_sp_address() {
-    return &thread_local_top_.js_entry_sp_;
+    return &thread_local_top()->js_entry_sp_;
   }
 
   // Generated code scratch locations.
-  void* formal_count_address() { return &thread_local_top_.formal_count_; }
+  void* formal_count_address() { return &thread_local_top()->formal_count_; }
 
   // Returns the global object of the current context. It could be
   // a builtin object, or a js global object.
@@ -560,7 +559,7 @@ class Isolate {
   }
 
   Handle<JSBuiltinsObject> js_builtins_object() {
-    return Handle<JSBuiltinsObject>(thread_local_top_.context_->builtins());
+    return Handle<JSBuiltinsObject>(thread_local_top()->context_->builtins());
   }
 
   // This method is called by the api after operations that may throw
@@ -599,10 +598,10 @@ class Isolate {
   // exception.
   bool is_out_of_memory();
   bool ignore_out_of_memory() {
-    return thread_local_top_.ignore_out_of_memory_;
+    return thread_local_top()->ignore_out_of_memory_;
   }
   void set_ignore_out_of_memory(bool value) {
-    thread_local_top_.ignore_out_of_memory_ = value;
+    thread_local_top()->ignore_out_of_memory_ = value;
   }
 
   void PrintCurrentStackTrace(FILE* out);
@@ -729,7 +728,7 @@ class Isolate {
   StatsTable* stats_table();
   StubCache* stub_cache() { return stub_cache_; }
   DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
-  ThreadLocalTop* thread_local_top() { return &thread_local_top_; }
+  ThreadLocalTop* thread_local_top() { return thread_local_top_; }
 
   Transaction* get_transaction() const { return transaction_; }
   void set_transaction(Transaction* transaction) { transaction_ = transaction; }
@@ -870,21 +869,21 @@ class Isolate {
   static const int kJSRegexpStaticOffsetsVectorSize = 50;
 
   Address external_callback() {
-    return thread_local_top_.external_callback_;
+    return thread_local_top()->external_callback_;
   }
   void set_external_callback(Address callback) {
-    thread_local_top_.external_callback_ = callback;
+    thread_local_top()->external_callback_ = callback;
   }
 
   StateTag current_vm_state() {
-    return thread_local_top_.current_vm_state_;
+    return thread_local_top()->current_vm_state_;
   }
 
   void SetCurrentVMState(StateTag state) {
     if (RuntimeProfiler::IsEnabled()) {
       // Make sure thread local top is initialized.
-      ASSERT(thread_local_top_.isolate_ == this);
-      StateTag current_state = thread_local_top_.current_vm_state_;
+      ASSERT(thread_local_top()->isolate_ == this);
+      StateTag current_state = thread_local_top()->current_vm_state_;
       if (current_state != JS && state == JS) {
         // Non-JS -> JS transition.
         RuntimeProfiler::IsolateEnteredJS(this);
@@ -899,7 +898,7 @@ class Isolate {
         ASSERT((current_state == JS) == (state == JS));
       }
     }
-    thread_local_top_.current_vm_state_ = state;
+    thread_local_top()->current_vm_state_ = state;
   }
 
   void SetData(void* data) { embedder_data_ = data; }
@@ -981,7 +980,7 @@ class Isolate {
   StatsTable* stats_table_;
   StubCache* stub_cache_;
   DeoptimizerData* deoptimizer_data_;
-  ThreadLocalTop thread_local_top_;
+  ThreadLocalTop* thread_local_top_;
   bool capture_stack_trace_for_uncaught_exceptions_;
   int stack_trace_for_uncaught_exceptions_frame_limit_;
   StackTrace::StackTraceOptions stack_trace_for_uncaught_exceptions_options_;

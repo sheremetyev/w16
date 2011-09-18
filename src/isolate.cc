@@ -101,7 +101,9 @@ void ThreadLocalTop::InitializeInternal() {
 }
 
 
-void ThreadLocalTop::Initialize() {
+void ThreadLocalTop::Initialize(Isolate* isolate) {
+  isolate_ = isolate;
+  thread_id_ = ThreadId::Current();
   InitializeInternal();
 #ifdef USE_SIMULATOR
 #ifdef V8_TARGET_ARCH_ARM
@@ -1073,22 +1075,22 @@ void Isolate::ReportPendingMessages() {
   // since the GenerateThrowOutOfMemory stub cannot make a RuntimeCall to
   // set it.
   HandleScope scope;
-  if (thread_local_top_.pending_exception_ == Failure::OutOfMemoryException()) {
+  if (thread_local_top()->pending_exception_ == Failure::OutOfMemoryException()) {
     context()->mark_out_of_memory();
-  } else if (thread_local_top_.pending_exception_ ==
+  } else if (thread_local_top()->pending_exception_ ==
              heap()->termination_exception()) {
     // Do nothing: if needed, the exception has been already propagated to
     // v8::TryCatch.
   } else {
-    if (thread_local_top_.has_pending_message_) {
-      thread_local_top_.has_pending_message_ = false;
-      if (!thread_local_top_.pending_message_obj_->IsTheHole()) {
+    if (thread_local_top()->has_pending_message_) {
+      thread_local_top()->has_pending_message_ = false;
+      if (!thread_local_top()->pending_message_obj_->IsTheHole()) {
         HandleScope scope;
-        Handle<Object> message_obj(thread_local_top_.pending_message_obj_);
-        if (thread_local_top_.pending_message_script_ != NULL) {
-          Handle<Script> script(thread_local_top_.pending_message_script_);
-          int start_pos = thread_local_top_.pending_message_start_pos_;
-          int end_pos = thread_local_top_.pending_message_end_pos_;
+        Handle<Object> message_obj(thread_local_top()->pending_message_obj_);
+        if (thread_local_top()->pending_message_script_ != NULL) {
+          Handle<Script> script(thread_local_top()->pending_message_script_);
+          int start_pos = thread_local_top()->pending_message_start_pos_;
+          int end_pos = thread_local_top()->pending_message_end_pos_;
           MessageLocation location(script, start_pos, end_pos);
           MessageHandler::ReportMessage(this, &location, message_obj);
         } else {
@@ -1436,8 +1438,6 @@ Isolate::~Isolate() {
 
 
 void Isolate::InitializeThreadLocal() {
-  thread_local_top_.isolate_ = this;
-  thread_local_top_.Initialize();
   clear_pending_exception();
   clear_pending_message();
   clear_scheduled_exception();
@@ -1448,13 +1448,13 @@ void Isolate::PropagatePendingExceptionToExternalTryCatch() {
   ASSERT(has_pending_exception());
 
   bool external_caught = IsExternallyCaught();
-  thread_local_top_.external_caught_exception_ = external_caught;
+  thread_local_top()->external_caught_exception_ = external_caught;
 
   if (!external_caught) return;
 
-  if (thread_local_top_.pending_exception_ == Failure::OutOfMemoryException()) {
+  if (thread_local_top()->pending_exception_ == Failure::OutOfMemoryException()) {
     // Do not propagate OOM exception: we should kill VM asap.
-  } else if (thread_local_top_.pending_exception_ ==
+  } else if (thread_local_top()->pending_exception_ ==
              heap()->termination_exception()) {
     try_catch_handler()->can_continue_ = false;
     try_catch_handler()->exception_ = heap()->null_value();
@@ -1464,8 +1464,8 @@ void Isolate::PropagatePendingExceptionToExternalTryCatch() {
     ASSERT(!pending_exception()->IsFailure());
     try_catch_handler()->can_continue_ = true;
     try_catch_handler()->exception_ = pending_exception();
-    if (!thread_local_top_.pending_message_obj_->IsTheHole()) {
-      try_catch_handler()->message_ = thread_local_top_.pending_message_obj_;
+    if (!thread_local_top()->pending_message_obj_->IsTheHole()) {
+      try_catch_handler()->message_ = thread_local_top()->pending_message_obj_;
     }
   }
 }
@@ -1626,11 +1626,14 @@ StatsTable* Isolate::stats_table() {
 
 void Isolate::Enter() {
   SetIsolateThreadLocals(this);
-  set_thread_id(ThreadId::Current());
+  thread_local_top_ = new ThreadLocalTop();
+  thread_local_top_->Initialize(this);
 }
 
 
 void Isolate::Exit() {
+  delete thread_local_top_;
+  thread_local_top_ = NULL;
   SetIsolateThreadLocals(NULL);
 }
 
