@@ -1930,6 +1930,7 @@ class KeyedLookupCache {
 
   friend class ExternalReference;
   friend class Isolate;
+  friend class ThreadLocalTop;
   DISALLOW_COPY_AND_ASSIGN(KeyedLookupCache);
 };
 
@@ -1995,6 +1996,7 @@ class DescriptorLookupCache {
   int results_[kLength];
 
   friend class Isolate;
+  friend class ThreadLocalTop;
   DISALLOW_COPY_AND_ASSIGN(DescriptorLookupCache);
 };
 
@@ -2270,6 +2272,7 @@ class TranscendentalCache {
 
   // Instantiation
   friend class Isolate;
+  friend class ThreadLocalTop;
   // Inline implementation of the caching.
   friend class TranscendentalCacheStub;
   // Allow access to the caches_ array as an ExternalReference.

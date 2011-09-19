@@ -334,6 +334,7 @@ class StubCache {
   explicit StubCache(Isolate* isolate);
 
   friend class Isolate;
+  friend class ThreadLocalTop;
   friend class SCTableReference;
   static const int kPrimaryTableSize = 2048;
   static const int kSecondaryTableSize = 512;

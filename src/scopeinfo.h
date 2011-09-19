@@ -240,6 +240,7 @@ class ContextSlotCache {
   uint32_t values_[kLength];
 
   friend class Isolate;
+  friend class ThreadLocalTop;
   DISALLOW_COPY_AND_ASSIGN(ContextSlotCache);
 };
 

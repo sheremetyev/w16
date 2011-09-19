@@ -267,6 +267,7 @@ class GlobalHandles {
   List<ImplicitRefGroup*> implicit_ref_groups_;
 
   friend class Isolate;
+  friend class ThreadLocalTop;
 
   DISALLOW_COPY_AND_ASSIGN(GlobalHandles);
 };

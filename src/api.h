@@ -382,6 +382,7 @@ class StringTracker {
   static const int kUseLimit = 32;
 
   friend class Isolate;
+  friend class ThreadLocalTop;
 
   DISALLOW_COPY_AND_ASSIGN(StringTracker);
 };
