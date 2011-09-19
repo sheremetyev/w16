@@ -174,6 +174,7 @@ int main(int argc, char **argv) {
   strcat(flags, " --nouse-ic"); // disable inline caching
   strcat(flags, " --noinline-new"); // disable inline allocation
   strcat(flags, " --noopt"); // disable profiling thread
+  strcat(flags, " --always-full-compiler"); // disable crankshaft
   V8::SetFlagsFromString(flags, strlen(flags));
 
   // process V8 flags and strip them from the command line
