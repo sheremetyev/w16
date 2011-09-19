@@ -1676,10 +1676,10 @@ void Isolate::Enter() {
   if (top == NULL) {
     top = new ThreadLocalTop();
     top->Initialize(this);
+    Thread::SetThreadLocal(thread_local_top_key_, top);
   }
 
   top->Enter(this);
-  Thread::SetThreadLocal(thread_local_top_key_, top);
 }
 
 
