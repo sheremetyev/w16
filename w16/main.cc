@@ -173,6 +173,7 @@ int main(int argc, char **argv) {
   strcat(flags, " --nostm");
   strcat(flags, " --nouse-ic"); // disable inline caching
   strcat(flags, " --noinline-new"); // disable inline allocation
+  strcat(flags, " --noopt"); // disable profiling thread
   V8::SetFlagsFromString(flags, strlen(flags));
 
   // process V8 flags and strip them from the command line
