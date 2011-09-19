@@ -135,6 +135,9 @@ class ThreadId {
   // Returns ThreadId for current thread.
   static ThreadId Current() { return ThreadId(GetCurrentThreadId()); }
 
+  // Returns current thread id as int
+  static int CurrentInt() { return Current().ToInteger(); }
+
   // Returns invalid ThreadId (guaranteed not to be equal to any thread).
   static ThreadId Invalid() { return ThreadId(kInvalidId); }
 

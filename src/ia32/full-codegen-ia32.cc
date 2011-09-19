@@ -282,6 +282,19 @@ void FullCodeGenerator::Generate(CompilationInfo* info) {
       __ bind(&ok);
     }
 
+#ifdef DEBUG
+    { Comment cmnt(masm_, "[ Thread assert");
+      // Make sure the code was compiled on the same thread
+      Label ok;
+      __ PrepareCallCFunction(0, ebx);
+      __ CallCFunction(ExternalReference::threadid_function(isolate()), 0);
+      __ cmp(eax, ThreadId::Current().ToInteger());
+      __ j(equal, &ok, Label::kNear);
+      __ Abort("Code was compiled for a different thread.");
+      __ bind(&ok);
+    }
+#endif // DEBUG
+
     { Comment cmnt(masm_, "[ Body");
       ASSERT(loop_depth() == 0);
       VisitStatements(function()->body());

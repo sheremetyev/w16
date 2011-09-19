@@ -735,6 +735,9 @@ ExternalReference::ExternalReference(Isolate::AddressId id, Isolate* isolate)
 ExternalReference::ExternalReference(const SCTableReference& table_ref)
   : address_(table_ref.address()) {}
 
+ExternalReference ExternalReference::threadid_function(Isolate* isolate) {
+  return ExternalReference(Redirect(isolate, FUNCTION_ADDR(ThreadId::CurrentInt)));
+}
 
 ExternalReference ExternalReference::flush_icache_function(Isolate* isolate) {
   return ExternalReference(Redirect(isolate, FUNCTION_ADDR(CPU::FlushICache)));
