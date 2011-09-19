@@ -226,6 +226,8 @@ class HashMap;
 #endif
 
 #define ISOLATE_INIT_ARRAY_LIST(V)                                             \
+  V(uint32_t, random_seed, 2)                                                  \
+  V(uint32_t, private_random_seed, 2)                                          \
   ISOLATE_INIT_DEBUG_ARRAY_LIST(V)
 
 #define THREAD_INIT_ARRAY_LIST(V)                                              \
@@ -235,13 +237,14 @@ class HashMap;
   V(int, bad_char_shift_table, kUC16AlphabetSize)                              \
   V(int, good_suffix_shift_table, (kBMMaxShift + 1))                           \
   V(int, suffix_table, (kBMMaxShift + 1))                                      \
-  V(uint32_t, random_seed, 2)                                                  \
-  V(uint32_t, private_random_seed, 2)                                          \
   THREAD_INIT_DEBUG_ARRAY_LIST(V)
 
 typedef List<HeapObject*, PreallocatedStorage> DebugObjectCache;
 
 #define ISOLATE_INIT_LIST(V)                                                   \
+  V(uint64_t, enabled_cpu_features, 0)                                         \
+  V(CpuProfiler*, cpu_profiler, NULL)                                          \
+  V(HeapProfiler*, heap_profiler, NULL)                                        \
   ISOLATE_PLATFORM_INIT_LIST(V)                                                \
   ISOLATE_DEBUGGER_INIT_LIST(V)
 
@@ -279,9 +282,6 @@ typedef List<HeapObject*, PreallocatedStorage> DebugObjectCache;
   V(unsigned, ast_node_count, 0)                                               \
   /* SafeStackFrameIterator activations count. */                              \
   V(int, safe_stack_iterator_counter, 0)                                       \
-  V(uint64_t, enabled_cpu_features, 0)                                         \
-  V(CpuProfiler*, cpu_profiler, NULL)                                          \
-  V(HeapProfiler*, heap_profiler, NULL)                                        \
   THREAD_PLATFORM_INIT_LIST(V)                                                 \
   THREAD_DEBUGGER_INIT_LIST(V)
 
@@ -296,6 +296,8 @@ class ThreadLocalTop {
 
   // Initialize the thread data.
   void Initialize(Isolate* isolate);
+
+  void Enter(Isolate* isolate);
 
   // Get the top C++ try catch handler or NULL if none are registered.
   //
@@ -449,8 +451,42 @@ class ThreadLocalTop {
 #undef THREAD_FIELD_OFFSET
 #endif
 
+  CompilationCache* compilation_cache_;
+  StackGuard stack_guard_;
+  StubCache* stub_cache_;
+  DeoptimizerData* deoptimizer_data_;
+  bool capture_stack_trace_for_uncaught_exceptions_;
+  int stack_trace_for_uncaught_exceptions_frame_limit_;
+  StackTrace::StackTraceOptions stack_trace_for_uncaught_exceptions_options_;
+  TranscendentalCache* transcendental_cache_;
+  KeyedLookupCache* keyed_lookup_cache_;
+  ContextSlotCache* context_slot_cache_;
+  DescriptorLookupCache* descriptor_lookup_cache_;
+  v8::ImplementationUtilities::HandleScopeData handle_scope_data_;
+  HandleScopeImplementer* handle_scope_implementer_;
+  UnicodeCache* unicode_cache_;
+  Zone zone_;
+  PcToCodeCache* pc_to_code_cache_;
+  StringInputBuffer* write_input_buffer_;
+  GlobalHandles* global_handles_;
+  RuntimeState runtime_state_;
+  Builtins builtins_;
+  StringTracker* string_tracker_;
+  unibrow::Mapping<unibrow::Ecma262UnCanonicalize> jsregexp_uncanonicalize_;
+  unibrow::Mapping<unibrow::CanonicalizationRange> jsregexp_canonrange_;
+  StringInputBuffer objects_string_compare_buffer_a_;
+  StringInputBuffer objects_string_compare_buffer_b_;
+  StaticResource<StringInputBuffer> objects_string_input_buffer_;
+  unibrow::Mapping<unibrow::Ecma262Canonicalize>
+      regexp_macro_assembler_canonicalize_;
+  RegExpStack* regexp_stack_;
+  unibrow::Mapping<unibrow::Ecma262Canonicalize> interp_canonicalize_mapping_;
+
   // END: MOVED FROM ISOLATE
 
+  friend class Isolate;
+
+  Transaction* transaction_;
 };
 
 
@@ -836,19 +872,19 @@ class Isolate {
   }
   CodeRange* code_range() { return code_range_; }
   RuntimeProfiler* runtime_profiler() { return runtime_profiler_; }
-  CompilationCache* compilation_cache() { return compilation_cache_; }
+  CompilationCache* compilation_cache() { return thread_local_top()->compilation_cache_; }
   Logger* logger() {
     // Call InitializeLoggingAndCounters() if logging is needed before
     // the isolate is fully initialized.
     ASSERT(logger_ != NULL);
     return logger_;
   }
-  StackGuard* stack_guard() { return &stack_guard_; }
+  StackGuard* stack_guard() { return &thread_local_top()->stack_guard_; }
   Heap* heap() { return &heap_; }
   STM* stm() { return &stm_; }
   StatsTable* stats_table();
-  StubCache* stub_cache() { return stub_cache_; }
-  DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
+  StubCache* stub_cache() { return thread_local_top()->stub_cache_; }
+  DeoptimizerData* deoptimizer_data() { return thread_local_top()->deoptimizer_data_; }
   ThreadLocalTop* thread_local_top() const {
     ThreadLocalTop* top = reinterpret_cast<ThreadLocalTop*>(
         Thread::GetExistingThreadLocal(thread_local_top_key_));
@@ -856,11 +892,11 @@ class Isolate {
     return top;
   }
 
-  Transaction* get_transaction() const { return transaction_; }
-  void set_transaction(Transaction* transaction) { transaction_ = transaction; }
+  Transaction* get_transaction() const { return thread_local_top()->transaction_; }
+  void set_transaction(Transaction* transaction) { thread_local_top()->transaction_ = transaction; }
 
   TranscendentalCache* transcendental_cache() const {
-    return transcendental_cache_;
+    return thread_local_top()->transcendental_cache_;
   }
 
   MemoryAllocator* memory_allocator() {
@@ -868,76 +904,76 @@ class Isolate {
   }
 
   KeyedLookupCache* keyed_lookup_cache() {
-    return keyed_lookup_cache_;
+    return thread_local_top()->keyed_lookup_cache_;
   }
 
   ContextSlotCache* context_slot_cache() {
-    return context_slot_cache_;
+    return thread_local_top()->context_slot_cache_;
   }
 
   DescriptorLookupCache* descriptor_lookup_cache() {
-    return descriptor_lookup_cache_;
+    return thread_local_top()->descriptor_lookup_cache_;
   }
 
   v8::ImplementationUtilities::HandleScopeData* handle_scope_data() {
-    return &handle_scope_data_;
+    return &thread_local_top()->handle_scope_data_;
   }
   HandleScopeImplementer* handle_scope_implementer() {
-    ASSERT(handle_scope_implementer_);
-    return handle_scope_implementer_;
+    ASSERT(thread_local_top()->handle_scope_implementer_);
+    return thread_local_top()->handle_scope_implementer_;
   }
-  Zone* zone() { return &zone_; }
+  Zone* zone() { return &thread_local_top()->zone_; }
 
   UnicodeCache* unicode_cache() {
-    return unicode_cache_;
+    return thread_local_top()->unicode_cache_;
   }
 
-  PcToCodeCache* pc_to_code_cache() { return pc_to_code_cache_; }
+  PcToCodeCache* pc_to_code_cache() { return thread_local_top()->pc_to_code_cache_; }
 
-  StringInputBuffer* write_input_buffer() { return write_input_buffer_; }
+  StringInputBuffer* write_input_buffer() { return thread_local_top()->write_input_buffer_; }
 
-  GlobalHandles* global_handles() { return global_handles_; }
+  GlobalHandles* global_handles() { return thread_local_top()->global_handles_; }
 
-  StringTracker* string_tracker() { return string_tracker_; }
+  StringTracker* string_tracker() { return thread_local_top()->string_tracker_; }
 
   unibrow::Mapping<unibrow::Ecma262UnCanonicalize>* jsregexp_uncanonicalize() {
-    return &jsregexp_uncanonicalize_;
+    return &thread_local_top()->jsregexp_uncanonicalize_;
   }
 
   unibrow::Mapping<unibrow::CanonicalizationRange>* jsregexp_canonrange() {
-    return &jsregexp_canonrange_;
+    return &thread_local_top()->jsregexp_canonrange_;
   }
 
   StringInputBuffer* objects_string_compare_buffer_a() {
-    return &objects_string_compare_buffer_a_;
+    return &thread_local_top()->objects_string_compare_buffer_a_;
   }
 
   StringInputBuffer* objects_string_compare_buffer_b() {
-    return &objects_string_compare_buffer_b_;
+    return &thread_local_top()->objects_string_compare_buffer_b_;
   }
 
   StaticResource<StringInputBuffer>* objects_string_input_buffer() {
-    return &objects_string_input_buffer_;
+    return &thread_local_top()->objects_string_input_buffer_;
   }
 
-  RuntimeState* runtime_state() { return &runtime_state_; }
+  RuntimeState* runtime_state() { return &thread_local_top()->runtime_state_; }
 
   StaticResource<SafeStringInputBuffer>* compiler_safe_string_input_buffer() {
     return &compiler_safe_string_input_buffer_;
   }
 
-  Builtins* builtins() { return &builtins_; }
+  Builtins* builtins() { return &thread_local_top()->builtins_; }
 
   unibrow::Mapping<unibrow::Ecma262Canonicalize>*
       regexp_macro_assembler_canonicalize() {
-    return &regexp_macro_assembler_canonicalize_;
+    return &thread_local_top()->regexp_macro_assembler_canonicalize_;
   }
 
-  RegExpStack* regexp_stack() { return regexp_stack_; }
+  RegExpStack* regexp_stack() { return thread_local_top()->regexp_stack_; }
 
   unibrow::Mapping<unibrow::Ecma262Canonicalize>*
       interp_canonicalize_mapping() {
-    return &interp_canonicalize_mapping_;
+    return &thread_local_top()->interp_canonicalize_mapping_;
   }
 
   void* PreallocatedStorageNew(size_t size);
@@ -1090,7 +1126,6 @@ class Isolate {
 
   Bootstrapper* bootstrapper_;
   RuntimeProfiler* runtime_profiler_;
-  CompilationCache* compilation_cache_;
   Counters* counters_;
   CodeRange* code_range_;
   Mutex* break_access_;
@@ -1098,43 +1133,13 @@ class Isolate {
   Mutex* debugger_access_;
   Heap heap_;
   STM stm_;
-  Transaction* transaction_;
   Logger* logger_;
-  StackGuard stack_guard_;
   StatsTable* stats_table_;
-  StubCache* stub_cache_;
-  DeoptimizerData* deoptimizer_data_;
-  bool capture_stack_trace_for_uncaught_exceptions_;
-  int stack_trace_for_uncaught_exceptions_frame_limit_;
-  StackTrace::StackTraceOptions stack_trace_for_uncaught_exceptions_options_;
-  TranscendentalCache* transcendental_cache_;
   MemoryAllocator* memory_allocator_;
-  KeyedLookupCache* keyed_lookup_cache_;
-  ContextSlotCache* context_slot_cache_;
-  DescriptorLookupCache* descriptor_lookup_cache_;
-  v8::ImplementationUtilities::HandleScopeData handle_scope_data_;
-  HandleScopeImplementer* handle_scope_implementer_;
-  UnicodeCache* unicode_cache_;
-  Zone zone_;
   PreallocatedStorage in_use_list_;
   PreallocatedStorage free_list_;
   bool preallocated_storage_preallocated_;
-  PcToCodeCache* pc_to_code_cache_;
-  StringInputBuffer* write_input_buffer_;
-  GlobalHandles* global_handles_;
-  RuntimeState runtime_state_;
   StaticResource<SafeStringInputBuffer> compiler_safe_string_input_buffer_;
-  Builtins builtins_;
-  StringTracker* string_tracker_;
-  unibrow::Mapping<unibrow::Ecma262UnCanonicalize> jsregexp_uncanonicalize_;
-  unibrow::Mapping<unibrow::CanonicalizationRange> jsregexp_canonrange_;
-  StringInputBuffer objects_string_compare_buffer_a_;
-  StringInputBuffer objects_string_compare_buffer_b_;
-  StaticResource<StringInputBuffer> objects_string_input_buffer_;
-  unibrow::Mapping<unibrow::Ecma262Canonicalize>
-      regexp_macro_assembler_canonicalize_;
-  RegExpStack* regexp_stack_;
-  unibrow::Mapping<unibrow::Ecma262Canonicalize> interp_canonicalize_mapping_;
   void* embedder_data_;
 
 #if defined(V8_TARGET_ARCH_ARM) && !defined(__arm__) || \

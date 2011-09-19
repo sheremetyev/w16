@@ -200,9 +200,9 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  Isolate::Scope isolate_scope(Isolate::GetCurrent());
-
   V8::Initialize();
+
+  Isolate::Scope isolate_scope(Isolate::GetCurrent());
 
   // create a stack-allocated handle scope
   HandleScope handle_scope;

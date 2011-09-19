@@ -73,7 +73,26 @@ int ThreadId::GetCurrentThreadId() {
 }
 
 
-ThreadLocalTop::ThreadLocalTop() {
+ThreadLocalTop::ThreadLocalTop()
+    : compilation_cache_(NULL),
+      transaction_(NULL),
+      stub_cache_(NULL),
+      deoptimizer_data_(NULL),
+      capture_stack_trace_for_uncaught_exceptions_(false),
+      stack_trace_for_uncaught_exceptions_frame_limit_(0),
+      stack_trace_for_uncaught_exceptions_options_(StackTrace::kOverview),
+      transcendental_cache_(NULL),
+      keyed_lookup_cache_(NULL),
+      context_slot_cache_(NULL),
+      descriptor_lookup_cache_(NULL),
+      handle_scope_implementer_(NULL),
+      unicode_cache_(NULL),
+      pc_to_code_cache_(NULL),
+      write_input_buffer_(NULL),
+      global_handles_(NULL),
+      string_tracker_(NULL),
+      regexp_stack_(NULL)
+{
   InitializeInternal();
   // This flag may be set using v8::V8::IgnoreOutOfMemoryException()
   // before an isolate is initialized. The initialize methods below do
@@ -102,6 +121,48 @@ ThreadLocalTop::ThreadLocalTop() {
 
 
 ThreadLocalTop::~ThreadLocalTop() {
+  delete deoptimizer_data_;
+  deoptimizer_data_ = NULL;
+  builtins_.TearDown();
+
+  // Has to be called while counters_ are still alive.
+  zone_.DeleteKeptSegment();
+
+  delete unicode_cache_;
+  unicode_cache_ = NULL;
+
+  delete regexp_stack_;
+  regexp_stack_ = NULL;
+
+  delete descriptor_lookup_cache_;
+  descriptor_lookup_cache_ = NULL;
+  delete context_slot_cache_;
+  context_slot_cache_ = NULL;
+  delete keyed_lookup_cache_;
+  keyed_lookup_cache_ = NULL;
+
+  delete transcendental_cache_;
+  transcendental_cache_ = NULL;
+  delete stub_cache_;
+  stub_cache_ = NULL;
+
+  delete handle_scope_implementer_;
+  handle_scope_implementer_ = NULL;
+
+  delete compilation_cache_;
+  compilation_cache_ = NULL;
+
+  delete pc_to_code_cache_;
+  pc_to_code_cache_ = NULL;
+  delete write_input_buffer_;
+  write_input_buffer_ = NULL;
+
+  delete string_tracker_;
+  string_tracker_ = NULL;
+
+  delete global_handles_;
+  global_handles_ = NULL;
+
   delete[] assembler_spare_buffer_;
   assembler_spare_buffer_ = NULL;
 
@@ -140,7 +201,53 @@ void ThreadLocalTop::Initialize(Isolate* isolate) {
   simulator_ = Simulator::current(isolate_);
 #endif
 #endif
-  thread_id_ = ThreadId::Current();
+
+  zone_.isolate_ = isolate_;
+  stack_guard_.isolate_ = isolate_;
+  handle_scope_data_.Initialize();
+
+  string_tracker_ = new StringTracker();
+  string_tracker_->isolate_ = isolate_;
+  compilation_cache_ = new CompilationCache(isolate_);
+  transcendental_cache_ = new TranscendentalCache();
+  keyed_lookup_cache_ = new KeyedLookupCache();
+  context_slot_cache_ = new ContextSlotCache();
+  descriptor_lookup_cache_ = new DescriptorLookupCache();
+  unicode_cache_ = new UnicodeCache();
+  pc_to_code_cache_ = new PcToCodeCache(isolate_);
+  write_input_buffer_ = new StringInputBuffer();
+  global_handles_ = new GlobalHandles(isolate_);
+  handle_scope_implementer_ = new HandleScopeImplementer(isolate_);
+  stub_cache_ = new StubCache(isolate_);
+  regexp_stack_ = new RegExpStack();
+  regexp_stack_->isolate_ = isolate_;
+}
+
+
+void ThreadLocalTop::Enter(Isolate* isolate) {
+  ASSERT(isolate_ == isolate);
+
+  Deserializer* des = NULL;
+  const bool create_heap_objects = (des == NULL);
+
+  { // NOLINT
+    // Ensure that the thread has a valid stack guard.  The v8::Locker object
+    // will ensure this too, but we don't have to use lockers if we are only
+    // using one thread.
+    ExecutionAccess lock(isolate_);
+    stack_guard_.InitThread(lock);
+  }
+
+  builtins_.Setup(create_heap_objects);
+
+  stub_cache_->Initialize(create_heap_objects);
+  // If we are deserializing, read the state into the now-empty heap.
+  if (des != NULL) {
+    des->Deserialize();
+    stub_cache_->Clear();
+  }
+
+  deoptimizer_data_ = new DeoptimizerData;
 }
 
 
@@ -364,8 +471,16 @@ void Isolate::EnsureDefaultIsolate() {
     thread_local_top_key_ = Thread::CreateThreadLocalKey();
     thread_id_key_ = Thread::CreateThreadLocalKey();
     default_isolate_ = new Isolate();
+
+    SetIsolateThreadLocals(default_isolate_);
+
+    // not fully initialized TLT yet, but we need its caches for V8 initialization
+    ThreadLocalTop* top = new ThreadLocalTop();
+    top->Initialize(default_isolate_);
+    Thread::SetThreadLocal(thread_local_top_key_, top);
   }
-  SetIsolateThreadLocals(default_isolate_);
+
+  ASSERT(Isolate::Current() == default_isolate_);
 }
 
 
@@ -1013,10 +1128,10 @@ void Isolate::DoThrow(MaybeObject* exception, MessageLocation* location) {
       Handle<String> stack_trace;
       if (FLAG_trace_exception) stack_trace = StackTraceString();
       Handle<JSArray> stack_trace_object;
-      if (report_exception && capture_stack_trace_for_uncaught_exceptions_) {
+      if (report_exception && thread_local_top()->capture_stack_trace_for_uncaught_exceptions_) {
           stack_trace_object = CaptureCurrentStackTrace(
-              stack_trace_for_uncaught_exceptions_frame_limit_,
-              stack_trace_for_uncaught_exceptions_options_);
+              thread_local_top()->stack_trace_for_uncaught_exceptions_frame_limit_,
+              thread_local_top()->stack_trace_for_uncaught_exceptions_options_);
       }
       ASSERT(is_object);  // Can't use the handle unless there's a real object.
       message_obj = MessageHandler::MakeMessageObject("uncaught_exception",
@@ -1188,9 +1303,9 @@ void Isolate::SetCaptureStackTraceForUncaughtExceptions(
       bool capture,
       int frame_limit,
       StackTrace::StackTraceOptions options) {
-  capture_stack_trace_for_uncaught_exceptions_ = capture;
-  stack_trace_for_uncaught_exceptions_frame_limit_ = frame_limit;
-  stack_trace_for_uncaught_exceptions_options_ = options;
+  thread_local_top()->capture_stack_trace_for_uncaught_exceptions_ = capture;
+  thread_local_top()->stack_trace_for_uncaught_exceptions_frame_limit_ = frame_limit;
+  thread_local_top()->stack_trace_for_uncaught_exceptions_options_ = options;
 }
 
 
@@ -1259,7 +1374,6 @@ Isolate::Isolate()
       preallocated_message_space_(NULL),
       bootstrapper_(NULL),
       runtime_profiler_(NULL),
-      compilation_cache_(NULL),
       counters_(NULL),
       code_range_(NULL),
       // Must be initialized early to allow v8::SetResourceConstraints calls.
@@ -1267,36 +1381,17 @@ Isolate::Isolate()
       debugger_initialized_(false),
       // Must be initialized early to allow v8::Debug calls.
       debugger_access_(OS::CreateMutex()),
-      transaction_(NULL),
       logger_(NULL),
       stats_table_(NULL),
-      stub_cache_(NULL),
-      deoptimizer_data_(NULL),
-      capture_stack_trace_for_uncaught_exceptions_(false),
-      stack_trace_for_uncaught_exceptions_frame_limit_(0),
-      stack_trace_for_uncaught_exceptions_options_(StackTrace::kOverview),
-      transcendental_cache_(NULL),
       memory_allocator_(NULL),
-      keyed_lookup_cache_(NULL),
-      context_slot_cache_(NULL),
-      descriptor_lookup_cache_(NULL),
-      handle_scope_implementer_(NULL),
-      unicode_cache_(NULL),
       in_use_list_(0),
       free_list_(0),
       preallocated_storage_preallocated_(false),
-      pc_to_code_cache_(NULL),
-      write_input_buffer_(NULL),
-      global_handles_(NULL),
-      string_tracker_(NULL),
-      regexp_stack_(NULL),
       embedder_data_(NULL) {
   TRACE_ISOLATE(constructor);
 
   heap_.isolate_ = this;
   stm_.isolate_ = this;
-  zone_.isolate_ = this;
-  stack_guard_.isolate_ = this;
 
 #if defined(V8_TARGET_ARCH_ARM) && !defined(__arm__) || \
     defined(V8_TARGET_ARCH_MIPS) && !defined(__mips__)
@@ -1316,8 +1411,6 @@ Isolate::Isolate()
   debug_ = NULL;
   debugger_ = NULL;
 #endif
-
-  handle_scope_data_.Initialize();
 
 #define ISOLATE_INIT_EXECUTE(type, name, initial_value)                        \
   name##_ = (initial_value);
@@ -1360,9 +1453,6 @@ void Isolate::Deinit() {
     // We must stop the logger before we tear down other components.
     logger_->EnsureTickerStopped();
 
-    delete deoptimizer_data_;
-    deoptimizer_data_ = NULL;
-    builtins_.TearDown();
     bootstrapper_->TearDown();
 
     // Remove the external reference to the preallocated stack memory.
@@ -1394,26 +1484,6 @@ void Isolate::SetIsolateThreadLocals(Isolate* isolate) {
 Isolate::~Isolate() {
   TRACE_ISOLATE(destructor);
 
-  // Has to be called while counters_ are still alive.
-  zone_.DeleteKeptSegment();
-
-  delete unicode_cache_;
-  unicode_cache_ = NULL;
-
-  delete regexp_stack_;
-  regexp_stack_ = NULL;
-
-  delete descriptor_lookup_cache_;
-  descriptor_lookup_cache_ = NULL;
-  delete context_slot_cache_;
-  context_slot_cache_ = NULL;
-  delete keyed_lookup_cache_;
-  keyed_lookup_cache_ = NULL;
-
-  delete transcendental_cache_;
-  transcendental_cache_ = NULL;
-  delete stub_cache_;
-  stub_cache_ = NULL;
   delete stats_table_;
   stats_table_ = NULL;
 
@@ -1423,31 +1493,18 @@ Isolate::~Isolate() {
   delete counters_;
   counters_ = NULL;
 
-  delete handle_scope_implementer_;
-  handle_scope_implementer_ = NULL;
   delete break_access_;
   break_access_ = NULL;
   delete debugger_access_;
   debugger_access_ = NULL;
 
-  delete compilation_cache_;
-  compilation_cache_ = NULL;
   delete bootstrapper_;
   bootstrapper_ = NULL;
-  delete pc_to_code_cache_;
-  pc_to_code_cache_ = NULL;
-  delete write_input_buffer_;
-  write_input_buffer_ = NULL;
-
-  delete string_tracker_;
-  string_tracker_ = NULL;
 
   delete memory_allocator_;
   memory_allocator_ = NULL;
   delete code_range_;
   code_range_ = NULL;
-  delete global_handles_;
-  global_handles_ = NULL;
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
   delete debugger_;
@@ -1535,22 +1592,7 @@ bool Isolate::Init(Deserializer* des) {
   // ensuring that Isolate::Current() == this.
   heap_.SetStackLimits();
 
-  string_tracker_ = new StringTracker();
-  string_tracker_->isolate_ = this;
-  compilation_cache_ = new CompilationCache(this);
-  transcendental_cache_ = new TranscendentalCache();
-  keyed_lookup_cache_ = new KeyedLookupCache();
-  context_slot_cache_ = new ContextSlotCache();
-  descriptor_lookup_cache_ = new DescriptorLookupCache();
-  unicode_cache_ = new UnicodeCache();
-  pc_to_code_cache_ = new PcToCodeCache(this);
-  write_input_buffer_ = new StringInputBuffer();
-  global_handles_ = new GlobalHandles(this);
   bootstrapper_ = new Bootstrapper();
-  handle_scope_implementer_ = new HandleScopeImplementer(this);
-  stub_cache_ = new StubCache(this);
-  regexp_stack_ = new RegExpStack();
-  regexp_stack_->isolate_ = this;
 
   // Enable logging before setting up the heap
   logger_->Setup();
@@ -1565,14 +1607,6 @@ bool Isolate::Init(Deserializer* des) {
 #endif
 #endif
 
-  { // NOLINT
-    // Ensure that the thread has a valid stack guard.  The v8::Locker object
-    // will ensure this too, but we don't have to use lockers if we are only
-    // using one thread.
-    ExecutionAccess lock(this);
-    stack_guard_.InitThread(lock);
-  }
-
   // Setup the object heap.
   const bool create_heap_objects = (des == NULL);
   ASSERT(!heap_.HasBeenSetup());
@@ -1584,7 +1618,8 @@ bool Isolate::Init(Deserializer* des) {
   InitializeThreadLocal();
 
   bootstrapper_->Initialize(create_heap_objects);
-  builtins_.Setup(create_heap_objects);
+  // Builtins initialization has been moved to ThreadLocalTop
+  ASSERT(create_heap_objects);
 
   // Only preallocate on the first initialization.
   if (FLAG_preallocate_message_memory && preallocated_message_space_ == NULL) {
@@ -1598,24 +1633,18 @@ bool Isolate::Init(Deserializer* des) {
   }
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
+  // TODO(w16): debugger needs builtins
   debug_->Setup(create_heap_objects);
 #endif
-  stub_cache_->Initialize(create_heap_objects);
-
-  // If we are deserializing, read the state into the now-empty heap.
-  if (des != NULL) {
-    des->Deserialize();
-    stub_cache_->Clear();
-  }
 
   // Deserializing may put strange things in the root array's copy of the
   // stack guard.
   heap_.SetStackLimits();
 
-  deoptimizer_data_ = new DeoptimizerData;
   runtime_profiler_ = new RuntimeProfiler(this);
   runtime_profiler_->Setup();
 
+  // TODO(w16): move this to ThreadLocalTop if snapshot is to be supported
   // If we are deserializing, log non-function code objects and compiled
   // functions found in the snapshot.
   if (des != NULL && (FLAG_log_code || FLAG_ll_prof)) {
@@ -1641,8 +1670,15 @@ StatsTable* Isolate::stats_table() {
 
 void Isolate::Enter() {
   SetIsolateThreadLocals(this);
-  ThreadLocalTop* top = new ThreadLocalTop();
-  top->Initialize(this);
+  
+  ThreadLocalTop* top = reinterpret_cast<ThreadLocalTop*>(
+    Thread::GetThreadLocal(thread_local_top_key_));
+  if (top == NULL) {
+    top = new ThreadLocalTop();
+    top->Initialize(this);
+  }
+
+  top->Enter(this);
   Thread::SetThreadLocal(thread_local_top_key_, top);
 }
 
