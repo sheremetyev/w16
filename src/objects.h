@@ -3899,9 +3899,10 @@ class Code: public HeapObject {
   class KindField: public BitField<Kind, 7, 4> {};
   class CacheHolderField: public BitField<InlineCacheHolderFlag, 11, 1> {};
   class ExtraICStateField: public BitField<ExtraICState, 12, 2> {};
+  class ThreadIndexField: public BitField<uint32_t, 14, 3> {};
 
   // Signed field cannot be encoded using the BitField class.
-  static const int kArgumentsCountShift = 14;
+  static const int kArgumentsCountShift = 17;
   static const int kArgumentsCountMask = ~((1 << kArgumentsCountShift) - 1);
 
   static const int kFlagsNotUsedInLookup =

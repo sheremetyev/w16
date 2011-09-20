@@ -3115,11 +3115,14 @@ Code::Flags Code::ComputeFlags(Kind kind,
          kind == CALL_IC ||
          kind == STORE_IC ||
          kind == KEYED_STORE_IC);
+  int thread_index = ThreadId::CurrentInt() - 1;
+  ASSERT(thread_index < MAX_THREADS);
   // Compute the bit mask.
   int bits = KindField::encode(kind)
       | ICStateField::encode(ic_state)
       | TypeField::encode(type)
       | ExtraICStateField::encode(extra_ic_state)
+      | ThreadIndexField::encode(thread_index)
       | (argc << kArgumentsCountShift)
       | CacheHolderField::encode(holder);
   return static_cast<Flags>(bits);
