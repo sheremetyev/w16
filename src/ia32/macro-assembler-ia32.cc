@@ -1854,7 +1854,7 @@ void MacroAssembler::InvokeFunction(Register fun,
   SmiUntag(ebx);
 
   ParameterCount expected(ebx);
-  InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
+  InvokeCode(FieldOperand(edi, JSFunction::CodeEntryOffset()),
              expected, actual, flag, call_wrapper, call_kind);
 }
 
@@ -1877,7 +1877,7 @@ void MacroAssembler::InvokeFunction(JSFunction* function,
     // TODO(kasperl): For now, we always call indirectly through the
     // code field in the function to allow recompilation to take effect
     // without changing any of the call sites.
-    InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
+    InvokeCode(FieldOperand(edi, JSFunction::CodeEntryOffset()),
                expected, actual, flag, call_wrapper, call_kind);
   } else {
     Handle<Code> code(function->code());
@@ -1898,7 +1898,7 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
   // parameter count to avoid emitting code to do the check.
   ParameterCount expected(0);
   GetBuiltinFunction(edi, id);
-  InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
+  InvokeCode(FieldOperand(edi, JSFunction::CodeEntryOffset()),
              expected, expected, flag, call_wrapper, CALL_AS_METHOD);
 }
 
@@ -1918,7 +1918,7 @@ void MacroAssembler::GetBuiltinEntry(Register target, Builtins::JavaScript id) {
   // Load the JavaScript builtin function from the builtins object.
   GetBuiltinFunction(edi, id);
   // Load the code entry point from the function into the target register.
-  mov(target, FieldOperand(edi, JSFunction::kCodeEntryOffset));
+  mov(target, FieldOperand(edi, JSFunction::CodeEntryOffset()));
 }
 
 

@@ -4811,8 +4811,11 @@ class SharedFunctionInfo: public HeapObject {
   // Layout description.
   // Pointer fields.
   static const int kNameOffset = HeapObject::kHeaderSize;
-  static const int kCodeOffset = kNameOffset + kPointerSize;
-  static const int kScopeInfoOffset = kCodeOffset + kPointerSize;
+  static int CodeOffset(int thread_id);
+  static int CodeOffset();
+  static const int kCodeOffsetStart = kNameOffset + kPointerSize;
+  static const int kCodeOffsetEnd = kCodeOffsetStart + kPointerSize * MAX_THREADS;
+  static const int kScopeInfoOffset = kCodeOffsetEnd;
   static const int kConstructStubOffset = kScopeInfoOffset + kPointerSize;
   static const int kInstanceClassNameOffset =
       kConstructStubOffset + kPointerSize;
@@ -5112,9 +5115,11 @@ class JSFunction: public JSObject {
 
   // Layout descriptors. The last property (from kNonWeakFieldsEndOffset to
   // kSize) is weak and has special handling during garbage collection.
-  static const int kCodeEntryOffset = JSObject::kHeaderSize;
-  static const int kPrototypeOrInitialMapOffset =
-      kCodeEntryOffset + kPointerSize;
+  static int CodeEntryOffset(int thread_id);
+  static int CodeEntryOffset();
+  static const int kCodeEntryOffsetStart = JSObject::kHeaderSize;
+  static const int kCodeEntryOffsetEnd = kCodeEntryOffsetStart + kPointerSize * MAX_THREADS;
+  static const int kPrototypeOrInitialMapOffset = kCodeEntryOffsetEnd;
   static const int kSharedFunctionInfoOffset =
       kPrototypeOrInitialMapOffset + kPointerSize;
   static const int kContextOffset = kSharedFunctionInfoOffset + kPointerSize;

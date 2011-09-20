@@ -97,9 +97,9 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
 
   // Initialize the code pointer in the function to be the one
   // found in the shared function info object.
-  __ mov(edx, FieldOperand(edx, SharedFunctionInfo::kCodeOffset));
+  __ mov(edx, FieldOperand(edx, SharedFunctionInfo::CodeOffset()));
   __ lea(edx, FieldOperand(edx, Code::kHeaderSize));
-  __ mov(FieldOperand(eax, JSFunction::kCodeEntryOffset), edx);
+  __ mov(FieldOperand(eax, JSFunction::CodeEntryOffset()), edx);
 
   // Return and remove the on-stack parameter.
   __ ret(1 * kPointerSize);

@@ -3610,17 +3610,17 @@ void SharedFunctionInfo::set_start_position(int start_position) {
 
 
 Code* SharedFunctionInfo::code() {
-  return Code::cast(READ_FIELD(this, kCodeOffset));
+  return Code::cast(READ_FIELD(this, CodeOffset()));
 }
 
 
 Code* SharedFunctionInfo::unchecked_code() {
-  return reinterpret_cast<Code*>(READ_FIELD(this, kCodeOffset));
+  return reinterpret_cast<Code*>(READ_FIELD(this, CodeOffset()));
 }
 
 
 void SharedFunctionInfo::set_code(Code* value, WriteBarrierMode mode) {
-  WRITE_FIELD(this, kCodeOffset, value);
+  WRITE_FIELD(this, CodeOffset(), value);
   ASSERT(!Isolate::Current()->heap()->InNewSpace(value));
 }
 
@@ -3726,7 +3726,7 @@ Code* JSFunction::code() {
 
 Code* JSFunction::unchecked_code() {
   return reinterpret_cast<Code*>(
-      Code::GetObjectFromEntryAddress(FIELD_ADDR(this, kCodeEntryOffset)));
+      Code::GetObjectFromEntryAddress(FIELD_ADDR(this, CodeEntryOffset())));
 }
 
 
@@ -3734,7 +3734,7 @@ void JSFunction::set_code(Code* value) {
   // Skip the write barrier because code is never in new space.
   ASSERT(!HEAP->InNewSpace(value));
   Address entry = value->entry();
-  WRITE_INTPTR_FIELD(this, kCodeEntryOffset, reinterpret_cast<intptr_t>(entry));
+  WRITE_INTPTR_FIELD(this, CodeEntryOffset(), reinterpret_cast<intptr_t>(entry));
 }
 
 

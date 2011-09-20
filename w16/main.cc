@@ -187,10 +187,7 @@ int main(int argc, char **argv) {
   char* filename = argv[1];
   int threads = v8::internal::FLAG_threads;
 
-  /*
-  const int MAX_THREADS = v8::internal::CoreId::kMaxCores - 1;
-  */
-  const int MAX_THREADS = 1;
+  const int MAX_THREADS = v8::internal::MAX_THREADS;
   if (threads < 1 || threads > MAX_THREADS) {
     printf("Threads number should be between 1 and %d.\n", MAX_THREADS);
     return 1;

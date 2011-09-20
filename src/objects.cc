@@ -44,6 +44,7 @@
 #include "string-stream.h"
 #include "utils.h"
 #include "vm-state-inl.h"
+#include "isolate.h"
 
 #ifdef ENABLE_DISASSEMBLER
 #include "disasm.h"
@@ -6276,12 +6277,26 @@ bool Map::EquivalentToForNormalization(Map* other,
 }
 
 
+int JSFunction::CodeEntryOffset(int thread_id) {
+  ASSERT(thread_id < MAX_THREADS);
+  return kCodeEntryOffsetStart + thread_id * kPointerSize;
+}
+
+
+int JSFunction::CodeEntryOffset() {
+  int thread_id = ThreadId::CurrentInt() - 1;
+  return CodeEntryOffset(thread_id);
+}
+
+
 void JSFunction::JSFunctionIterateBody(int object_size, ObjectVisitor* v) {
   // Iterate over all fields in the body but take care in dealing with
   // the code entry.
-  IteratePointers(v, kPropertiesOffset, kCodeEntryOffset);
-  v->VisitCodeEntry(this->address() + kCodeEntryOffset);
-  IteratePointers(v, kCodeEntryOffset + kPointerSize, object_size);
+  IteratePointers(v, kPropertiesOffset, kCodeEntryOffsetStart);
+  for (int i = 0; i < MAX_THREADS; i++) {
+    v->VisitCodeEntry(this->address() + CodeEntryOffset(i));
+  }
+  IteratePointers(v, kCodeEntryOffsetEnd, object_size);
 }
 
 
@@ -6406,6 +6421,18 @@ MaybeObject* Oddball::Initialize(const char* to_string,
   set_to_number(to_number);
   set_kind(kind);
   return this;
+}
+
+
+int SharedFunctionInfo::CodeOffset(int thread_id) {
+  ASSERT(thread_id < MAX_THREADS);
+  return kCodeOffsetStart + thread_id * kPointerSize;
+}
+
+
+int SharedFunctionInfo::CodeOffset() {
+  int thread_id = ThreadId::CurrentInt() - 1;
+  return CodeOffset(thread_id);
 }
 
 

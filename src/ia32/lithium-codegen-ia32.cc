@@ -2593,7 +2593,7 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
   if (*function == *info()->closure()) {
     __ CallSelf();
   } else {
-    __ call(FieldOperand(edi, JSFunction::kCodeEntryOffset));
+    __ call(FieldOperand(edi, JSFunction::CodeEntryOffset()));
   }
 
   // Setup deoptimization.

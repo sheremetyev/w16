@@ -395,7 +395,9 @@ void JSFunction::JSFunctionVerify() {
 void SharedFunctionInfo::SharedFunctionInfoVerify() {
   CHECK(IsSharedFunctionInfo());
   VerifyObjectField(kNameOffset);
-  VerifyObjectField(kCodeOffset);
+  for (int i = 0; i < MAX_THREADS; i++) {
+    VerifyObjectField(CodeOffset(i));
+  }
   VerifyObjectField(kScopeInfoOffset);
   VerifyObjectField(kInstanceClassNameOffset);
   VerifyObjectField(kFunctionDataOffset);

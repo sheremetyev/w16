@@ -213,6 +213,8 @@ typedef byte* Address;
 // -----------------------------------------------------------------------------
 // Constants
 
+const int MAX_THREADS = 8; // for STM
+
 const int KB = 1024;
 const int MB = KB * KB;
 const int GB = KB * KB * KB;

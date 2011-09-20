@@ -734,7 +734,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   __ mov(edx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
   __ mov(ebx,
          FieldOperand(edx, SharedFunctionInfo::kFormalParameterCountOffset));
-  __ mov(edx, FieldOperand(edi, JSFunction::kCodeEntryOffset));
+  __ mov(edx, FieldOperand(edi, JSFunction::CodeEntryOffset()));
   __ SmiUntag(ebx);
   __ SetCallKind(ecx, CALL_AS_METHOD);
   __ cmp(eax, Operand(ebx));
@@ -1624,7 +1624,7 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
   // waiting for on-stack replacement.
   __ mov(eax, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
   __ mov(ecx, FieldOperand(eax, JSFunction::kSharedFunctionInfoOffset));
-  __ mov(ecx, FieldOperand(ecx, SharedFunctionInfo::kCodeOffset));
+  __ mov(ecx, FieldOperand(ecx, SharedFunctionInfo::CodeOffset()));
   __ cmpb(ebx, FieldOperand(ecx, Code::kAllowOSRAtLoopNestingLevelOffset));
   __ j(greater, &stack_check);
 

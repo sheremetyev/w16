@@ -297,7 +297,7 @@ class CodeFlusher {
 
   static JSFunction** GetNextCandidateField(JSFunction* candidate) {
     return reinterpret_cast<JSFunction**>(
-        candidate->address() + JSFunction::kCodeEntryOffset);
+        candidate->address() + JSFunction::kCodeEntryOffsetStart);
   }
 
   static JSFunction* GetNextCandidate(JSFunction* candidate) {
@@ -907,10 +907,12 @@ class StaticMarkingVisitor : public StaticVisitorBase {
 
     VisitPointers(heap,
                   SLOT_ADDR(object, JSFunction::kPropertiesOffset),
-                  SLOT_ADDR(object, JSFunction::kCodeEntryOffset));
+                  SLOT_ADDR(object, JSFunction::kCodeEntryOffsetStart));
 
     if (!flush_code_candidate) {
-      VisitCodeEntry(heap, object->address() + JSFunction::kCodeEntryOffset);
+      for (int i = 0; i < MAX_THREADS; i++) {
+        VisitCodeEntry(heap, object->address() + JSFunction::CodeEntryOffset(i));
+      }
     } else {
       // Don't visit code object.
 
@@ -928,8 +930,7 @@ class StaticMarkingVisitor : public StaticVisitorBase {
     }
 
     VisitPointers(heap,
-                  SLOT_ADDR(object,
-                            JSFunction::kCodeEntryOffset + kPointerSize),
+                  SLOT_ADDR(object, JSFunction::kCodeEntryOffsetEnd),
                   SLOT_ADDR(object, JSFunction::kNonWeakFieldsEndOffset));
 
     // Don't visit the next function list field as it is a weak reference.
@@ -951,11 +952,13 @@ class StaticMarkingVisitor : public StaticVisitorBase {
     VisitPointer(heap, SLOT_ADDR(object, SharedFunctionInfo::kNameOffset));
 
     if (!flush_code_candidate) {
-      VisitPointer(heap, SLOT_ADDR(object, SharedFunctionInfo::kCodeOffset));
+      for (int i = 0; i < MAX_THREADS; i++) {
+        VisitPointer(heap, SLOT_ADDR(object, SharedFunctionInfo::CodeOffset(i)));
+      }
     }
 
     VisitPointers(heap,
-                  SLOT_ADDR(object, SharedFunctionInfo::kScopeInfoOffset),
+                  SLOT_ADDR(object, SharedFunctionInfo::kCodeOffsetEnd),
                   SLOT_ADDR(object, SharedFunctionInfo::kSize));
   }
 
