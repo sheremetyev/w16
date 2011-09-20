@@ -245,6 +245,8 @@ void ThreadLocalTop::Enter(Isolate* isolate) {
   }
 
   deoptimizer_data_ = new DeoptimizerData;
+
+  isolate_->builtins()->Setup(true);
 }
 
 

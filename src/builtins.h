@@ -262,6 +262,8 @@ class Builtins {
   void Setup(bool create_heap_objects);
   void TearDown();
 
+  static int ThreadIndex();
+
   // Garbage collection support.
   void IterateBuiltins(ObjectVisitor* v);
 
@@ -305,11 +307,11 @@ class Builtins {
   Code* builtin(Name name) {
     // Code::cast cannot be used here since we access builtins
     // during the marking phase of mark sweep. See IC::Clear.
-    return reinterpret_cast<Code*>(builtins_[name]);
+    return reinterpret_cast<Code*>(builtins_[name][ThreadIndex()]);
   }
 
   Address builtin_address(Name name) {
-    return reinterpret_cast<Address>(&builtins_[name]);
+    return reinterpret_cast<Address>(&builtins_[name][ThreadIndex()]);
   }
 
   static Address c_function_address(CFunctionId id) {
@@ -332,7 +334,7 @@ class Builtins {
   // Note: These are always Code objects, but to conform with
   // IterateBuiltins() above which assumes Object**'s for the callback
   // function f, we use an Object* array here.
-  Object* builtins_[builtin_count];
+  Object* builtins_[builtin_count][MAX_THREADS];
   const char* names_[builtin_count];
   static const char* const javascript_names_[id_count];
   static int const javascript_argc_[id_count];
@@ -364,7 +366,7 @@ class Builtins {
 
   static void InitBuiltinFunctionTable();
 
-  bool initialized_;
+  bool initialized_[MAX_THREADS];
 
   friend class BuiltinFunctionTable;
   friend class Isolate;

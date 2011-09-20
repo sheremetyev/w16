@@ -1500,7 +1500,10 @@ static void Generate_FrameDropper_LiveEdit(MacroAssembler* masm) {
 #endif
 
 
-Builtins::Builtins() : initialized_(false) {
+Builtins::Builtins() {
+  for (int i = 0; i < MAX_THREADS; i++) {
+    initialized_[i] = false;
+  }
   memset(builtins_, 0, sizeof(builtins_[0]) * builtin_count);
   memset(names_, 0, sizeof(names_[0]) * builtin_count);
 }
@@ -1597,7 +1600,11 @@ void Builtins::InitBuiltinFunctionTable() {
 }
 
 void Builtins::Setup(bool create_heap_objects) {
-  ASSERT(!initialized_);
+  ASSERT(create_heap_objects);
+
+  int thread_index = ThreadIndex();
+  if (initialized_[thread_index]) return;
+
   Isolate* isolate = Isolate::Current();
   Heap* heap = isolate->heap();
 
@@ -1647,7 +1654,7 @@ void Builtins::Setup(bool create_heap_objects) {
       GDBJIT(AddCode(GDBJITInterface::BUILTIN,
                      functions[i].s_name,
                      Code::cast(code)));
-      builtins_[i] = code;
+      builtins_[i][thread_index] = code;
 #ifdef ENABLE_DISASSEMBLER
       if (FLAG_print_builtin_code) {
         PrintF("Builtin: %s\n", functions[i].s_name);
@@ -1657,31 +1664,36 @@ void Builtins::Setup(bool create_heap_objects) {
 #endif
     } else {
       // Deserializing. The values will be filled in during IterateBuiltins.
-      builtins_[i] = NULL;
+      builtins_[i][thread_index] = NULL;
     }
     names_[i] = functions[i].s_name;
   }
 
   // Mark as initialized.
-  initialized_ = true;
+  initialized_[thread_index] = true;
 }
 
+int Builtins::ThreadIndex() {
+  return ThreadId::CurrentInt() - 1;
+}
 
 void Builtins::TearDown() {
-  initialized_ = false;
+  for (int i = 0; i < MAX_THREADS; i++) {
+    initialized_[i] = false;
+  }
 }
 
 
 void Builtins::IterateBuiltins(ObjectVisitor* v) {
-  v->VisitPointers(&builtins_[0], &builtins_[0] + builtin_count);
+  v->VisitPointers(&builtins_[0][0], &builtins_[builtin_count][MAX_THREADS]);
 }
 
 
 const char* Builtins::Lookup(byte* pc) {
   // may be called during initialization (disassembler!)
-  if (initialized_) {
+  for (int j = 0; j < MAX_THREADS; j++) if (initialized_[j]) {
     for (int i = 0; i < builtin_count; i++) {
-      Code* entry = Code::cast(builtins_[i]);
+      Code* entry = Code::cast(builtins_[i][j]);
       if (entry->contains(pc)) {
         return names_[i];
       }
