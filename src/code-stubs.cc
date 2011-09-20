@@ -37,6 +37,10 @@
 namespace v8 {
 namespace internal {
 
+int CodeStub::ThreadIndex() {
+  return ThreadId::CurrentInt() - 1;
+}
+
 bool CodeStub::FindCodeInCache(Code** code_out) {
   Heap* heap = Isolate::Current()->heap();
   int index = heap->code_stubs()->FindEntry(GetKey());
