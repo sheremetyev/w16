@@ -1703,6 +1703,17 @@ const char* Builtins::Lookup(byte* pc) {
 }
 
 
+Builtins::Name Builtins::lookupid(Code* code) {
+  int thread_index = ThreadIndex();
+  for (int i = 0; i < builtin_count; i++) {
+    if (Code::cast(builtins_[i][thread_index]) == code) {
+      return static_cast<Builtins::Name>(i);
+    }
+  }
+  return kNotBuiltin;
+}
+
+
 #define DEFINE_BUILTIN_ACCESSOR_C(name, ignore)               \
 Handle<Code> Builtins::name() {                               \
   Code** code_address =                                       \

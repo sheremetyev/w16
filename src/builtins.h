@@ -278,7 +278,8 @@ class Builtins {
     BUILTIN_LIST_DEBUG_A(DEF_ENUM_A)
 #undef DEF_ENUM_C
 #undef DEF_ENUM_A
-    builtin_count
+    builtin_count,
+    kNotBuiltin
   };
 
   enum CFunctionId {
@@ -305,10 +306,18 @@ class Builtins {
 #undef DECLARE_BUILTIN_ACCESSOR_A
 
   Code* builtin(Name name) {
+    return builtin(name, ThreadIndex());
+  }
+
+  Code* builtin(Name name, int thread_index) {
     // Code::cast cannot be used here since we access builtins
     // during the marking phase of mark sweep. See IC::Clear.
-    return reinterpret_cast<Code*>(builtins_[name][ThreadIndex()]);
+    Code* code = reinterpret_cast<Code*>(builtins_[name][thread_index]);
+    ASSERT(code != NULL);
+    return code;
   }
+
+  Name lookupid(Code* code);
 
   Address builtin_address(Name name) {
     return reinterpret_cast<Address>(&builtins_[name][ThreadIndex()]);

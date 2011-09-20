@@ -3623,13 +3623,16 @@ void SharedFunctionInfo::set_code(Code* value, WriteBarrierMode mode) {
   Code* lazy_code = Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile);
   bool new_is_lazy = (lazy_code == value);
   bool old_is_lazy = (lazy_code == unchecked_code());
-  bool new_is_builtin = Isolate::Current()->builtins()->Lookup(value->entry()) != NULL;
+  Builtins::Name id = Isolate::Current()->builtins()->lookupid(value);
 
-  if (!old_is_lazy || new_is_builtin) {
-    // replace code for other threads too
-    Code* others_value = new_is_builtin ? value : lazy_code;
+  if (!old_is_lazy || id != Builtins::kNotBuiltin) {
+    // replace other threads' code
     for (int i = 0; i < MAX_THREADS; i++) {
-      WRITE_FIELD(this, CodeOffset(i), others_value);
+      Code* others_code = (id == Builtins::kNotBuiltin) ?
+        Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile, i) :
+        Isolate::Current()->builtins()->builtin(id, i);
+      ASSERT(others_code->IsCode());
+      WRITE_FIELD(this, CodeOffset(i), others_code);
     }
   }
 
@@ -3748,12 +3751,16 @@ void JSFunction::set_code(Code* value) {
   Code* lazy_code = Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile);
   bool new_is_lazy = (lazy_code == value);
   bool old_is_lazy = (lazy_code->entry() == old_entry);
-  bool new_is_builtin = Isolate::Current()->builtins()->Lookup(value->entry()) != NULL;
+  Builtins::Name id = Isolate::Current()->builtins()->lookupid(value);
 
-  if (!old_is_lazy || new_is_builtin) {
-    // replace code for other threads too
-    byte* others_entry = new_is_builtin ? value->entry() : lazy_code->entry();
+  if (!old_is_lazy || id != Builtins::kNotBuiltin) {
+    // replace other threads' code
     for (int i = 0; i < MAX_THREADS; i++) {
+      Code* others_code = (id == Builtins::kNotBuiltin) ?
+        Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile, i) :
+        Isolate::Current()->builtins()->builtin(id, i);
+      ASSERT(others_code->IsCode());
+      byte* others_entry = others_code->entry();
       WRITE_INTPTR_FIELD(this, CodeEntryOffset(i), reinterpret_cast<intptr_t>(others_entry));
     }
   }
