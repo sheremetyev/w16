@@ -3620,6 +3620,19 @@ Code* SharedFunctionInfo::unchecked_code() {
 
 
 void SharedFunctionInfo::set_code(Code* value, WriteBarrierMode mode) {
+  Code* lazy_code = Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile);
+  bool new_is_lazy = (lazy_code == value);
+  bool old_is_lazy = (lazy_code == unchecked_code());
+  bool new_is_builtin = Isolate::Current()->builtins()->Lookup(value->entry()) != NULL;
+
+  if (!old_is_lazy || new_is_builtin) {
+    // replace code for other threads too
+    Code* others_value = new_is_builtin ? value : lazy_code;
+    for (int i = 0; i < MAX_THREADS; i++) {
+      WRITE_FIELD(this, CodeOffset(i), others_value);
+    }
+  }
+
   WRITE_FIELD(this, CodeOffset(), value);
   ASSERT(!Isolate::Current()->heap()->InNewSpace(value));
 }
@@ -3731,6 +3744,21 @@ Code* JSFunction::unchecked_code() {
 
 
 void JSFunction::set_code(Code* value) {
+  byte* old_entry = reinterpret_cast<byte*>(READ_INTPTR_FIELD(this, CodeEntryOffset()));
+  Code* lazy_code = Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile);
+  bool new_is_lazy = (lazy_code == value);
+  bool old_is_lazy = (lazy_code->entry() == old_entry);
+  bool new_is_builtin = Isolate::Current()->builtins()->Lookup(value->entry()) != NULL;
+
+  if (!old_is_lazy || new_is_builtin) {
+    // replace code for other threads too
+    byte* others_entry = new_is_builtin ? value->entry() : lazy_code->entry();
+    for (int i = 0; i < MAX_THREADS; i++) {
+      WRITE_INTPTR_FIELD(this, CodeEntryOffset(i), reinterpret_cast<intptr_t>(others_entry));
+    }
+  }
+
+
   // Skip the write barrier because code is never in new space.
   ASSERT(!HEAP->InNewSpace(value));
   Address entry = value->entry();
