@@ -1072,6 +1072,7 @@ class Isolate {
 
  private:
   Isolate();
+  void InitializeThreads();
 
   // This mutex protects highest_thread_id_, thread_data_table_ and
   // default_isolate_.
@@ -1144,6 +1145,8 @@ class Isolate {
   StaticResource<SafeStringInputBuffer> compiler_safe_string_input_buffer_;
   Builtins builtins_;
   void* embedder_data_;
+
+  ThreadLocalTop* tops_[MAX_THREADS];
 
 #if defined(V8_TARGET_ARCH_ARM) && !defined(__arm__) || \
     defined(V8_TARGET_ARCH_MIPS) && !defined(__mips__)

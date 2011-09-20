@@ -245,8 +245,6 @@ void ThreadLocalTop::Enter(Isolate* isolate) {
   }
 
   deoptimizer_data_ = new DeoptimizerData;
-
-  isolate_->builtins()->Setup(true);
 }
 
 
@@ -473,9 +471,10 @@ void Isolate::EnsureDefaultIsolate() {
 
     SetIsolateThreadLocals(default_isolate_);
 
+    default_isolate_->InitializeThreads();
+
     // not fully initialized TLT yet, but we need its caches for V8 initialization
-    ThreadLocalTop* top = new ThreadLocalTop();
-    top->Initialize(default_isolate_);
+    ThreadLocalTop* top = default_isolate_->tops_[ThreadId::CurrentInt()-1];
     Thread::SetThreadLocal(thread_local_top_key_, top);
   }
 
@@ -1420,6 +1419,15 @@ Isolate::Isolate()
   memset(name##_, 0, sizeof(type) * length);
   ISOLATE_INIT_ARRAY_LIST(ISOLATE_INIT_ARRAY_EXECUTE)
 #undef ISOLATE_INIT_ARRAY_EXECUTE
+
+  memset(&tops_, 0, sizeof(tops_));
+}
+
+void Isolate::InitializeThreads() {
+  for (int i = 0; i < MAX_THREADS; i++) {
+    tops_[i] = new ThreadLocalTop();
+    tops_[i]->Initialize(this);
+  }
 }
 
 void Isolate::TearDown() {
@@ -1483,6 +1491,10 @@ void Isolate::SetIsolateThreadLocals(Isolate* isolate) {
 
 Isolate::~Isolate() {
   TRACE_ISOLATE(destructor);
+
+  for (int i = 0; i < MAX_THREADS; i++) {
+    delete tops_[i];
+  }
 
   delete stats_table_;
   stats_table_ = NULL;
@@ -1618,7 +1630,17 @@ bool Isolate::Init(Deserializer* des) {
   InitializeThreadLocal();
 
   bootstrapper_->Initialize(create_heap_objects);
-  builtins_.Setup(create_heap_objects);
+
+  // initialize Builtins for all threads
+  int current_thread = Thread::GetThreadLocalInt(thread_id_key_);
+  void* current_top = Thread::GetThreadLocal(thread_local_top_key_);
+  for (int i = 0; i < MAX_THREADS; i++) {
+    Thread::SetThreadLocalInt(thread_id_key_, i + 1);
+    Thread::SetThreadLocal(thread_local_top_key_, tops_[i]);
+    builtins_.Setup(create_heap_objects);
+  }
+  Thread::SetThreadLocalInt(thread_id_key_, current_thread);
+  Thread::SetThreadLocal(thread_local_top_key_, current_top);
 
   // Only preallocate on the first initialization.
   if (FLAG_preallocate_message_memory && preallocated_message_space_ == NULL) {
@@ -1668,22 +1690,18 @@ StatsTable* Isolate::stats_table() {
 
 void Isolate::Enter() {
   SetIsolateThreadLocals(this);
-  
-  ThreadLocalTop* top = reinterpret_cast<ThreadLocalTop*>(
-    Thread::GetThreadLocal(thread_local_top_key_));
-  if (top == NULL) {
-    top = new ThreadLocalTop();
-    top->Initialize(this);
-    Thread::SetThreadLocal(thread_local_top_key_, top);
-  }
+
+  int thread_index = ThreadId::CurrentInt() - 1;
+  ASSERT(thread_index < MAX_THREADS);
+  ThreadLocalTop* top = tops_[thread_index];
+
+  Thread::SetThreadLocal(thread_local_top_key_, top);
 
   top->Enter(this);
 }
 
 
 void Isolate::Exit() {
-  ThreadLocalTop* top = thread_local_top();
-  delete top;
   Thread::SetThreadLocal(thread_local_top_key_, NULL);
   SetIsolateThreadLocals(NULL);
 }
