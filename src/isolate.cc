@@ -123,7 +123,6 @@ ThreadLocalTop::ThreadLocalTop()
 ThreadLocalTop::~ThreadLocalTop() {
   delete deoptimizer_data_;
   deoptimizer_data_ = NULL;
-  builtins_.TearDown();
 
   // Has to be called while counters_ are still alive.
   zone_.DeleteKeptSegment();
@@ -237,8 +236,6 @@ void ThreadLocalTop::Enter(Isolate* isolate) {
     ExecutionAccess lock(isolate_);
     stack_guard_.InitThread(lock);
   }
-
-  builtins_.Setup(create_heap_objects);
 
   stub_cache_->Initialize(create_heap_objects);
   // If we are deserializing, read the state into the now-empty heap.
@@ -1453,6 +1450,7 @@ void Isolate::Deinit() {
     // We must stop the logger before we tear down other components.
     logger_->EnsureTickerStopped();
 
+    builtins_.TearDown();
     bootstrapper_->TearDown();
 
     // Remove the external reference to the preallocated stack memory.
@@ -1618,8 +1616,7 @@ bool Isolate::Init(Deserializer* des) {
   InitializeThreadLocal();
 
   bootstrapper_->Initialize(create_heap_objects);
-  // Builtins initialization has been moved to ThreadLocalTop
-  ASSERT(create_heap_objects);
+  builtins_.Setup(create_heap_objects);
 
   // Only preallocate on the first initialization.
   if (FLAG_preallocate_message_memory && preallocated_message_space_ == NULL) {
@@ -1633,7 +1630,6 @@ bool Isolate::Init(Deserializer* des) {
   }
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
-  // TODO(w16): debugger needs builtins
   debug_->Setup(create_heap_objects);
 #endif
 

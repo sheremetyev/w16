@@ -368,7 +368,6 @@ class Builtins {
 
   friend class BuiltinFunctionTable;
   friend class Isolate;
-  friend class ThreadLocalTop;
 
   DISALLOW_COPY_AND_ASSIGN(Builtins);
 };

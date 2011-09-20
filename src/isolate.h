@@ -473,7 +473,6 @@ class ThreadLocalTop {
   StringInputBuffer* write_input_buffer_;
   GlobalHandles* global_handles_;
   RuntimeState runtime_state_;
-  Builtins builtins_;
   StringTracker* string_tracker_;
   unibrow::Mapping<unibrow::Ecma262UnCanonicalize> jsregexp_uncanonicalize_;
   unibrow::Mapping<unibrow::CanonicalizationRange> jsregexp_canonrange_;
@@ -965,7 +964,7 @@ class Isolate {
     return &compiler_safe_string_input_buffer_;
   }
 
-  Builtins* builtins() { return &thread_local_top()->builtins_; }
+  Builtins* builtins() { return &builtins_; }
 
   unibrow::Mapping<unibrow::Ecma262Canonicalize>*
       regexp_macro_assembler_canonicalize() {
@@ -1143,6 +1142,7 @@ class Isolate {
   PreallocatedStorage free_list_;
   bool preallocated_storage_preallocated_;
   StaticResource<SafeStringInputBuffer> compiler_safe_string_input_buffer_;
+  Builtins builtins_;
   void* embedder_data_;
 
 #if defined(V8_TARGET_ARCH_ARM) && !defined(__arm__) || \
