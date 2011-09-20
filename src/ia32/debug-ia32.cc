@@ -295,7 +295,7 @@ void Debug::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
 
   // Get function code.
   __ mov(edx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
-  __ mov(edx, FieldOperand(edx, SharedFunctionInfo::kCodeOffset));
+  __ mov(edx, FieldOperand(edx, SharedFunctionInfo::CodeOffset()));
   __ lea(edx, FieldOperand(edx, Code::kHeaderSize));
 
   // Re-run JSFunction, edi is function, esi is context.
