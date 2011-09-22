@@ -2156,10 +2156,14 @@ void MacroAssembler::CheckStackAlignment() {
 void MacroAssembler::CheckThread() {
 #ifdef DEBUG
   // Make sure the code was compiled on the same thread
-  PrepareCallCFunction(0, ebx);
-  CallCFunction(ExternalReference::threadid_function(isolate()), 0);
+  Label ok;
+  ExternalReference threadid_function(
+    ExternalReference::threadid_function(isolate()));
+  call(threadid_function.address(), RelocInfo::RUNTIME_ENTRY);
   cmp(eax, ThreadId::Current().ToInteger());
-  Check(equal, "Code was compiled for a different thread.");
+  j(equal, &ok, Label::kNear);
+  int3();
+  bind(&ok);
 #endif // DEBUG
 }
 
