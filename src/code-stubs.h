@@ -156,9 +156,8 @@ class CodeStub BASE_EMBEDDED {
   virtual bool SometimesSetsUpAFrame() { return true; }
 
  protected:
-  static const int kThreadBits = 3;
   static const int kMajorBits = 6;
-  static const int kMinorBits = kBitsPerInt - kSmiTagSize - kMajorBits - kThreadBits;
+  static const int kMinorBits = kBitsPerInt - kSmiTagSize - kMajorBits;
 
  private:
   // Lookup the code in the (possibly custom) cache.
@@ -181,7 +180,6 @@ class CodeStub BASE_EMBEDDED {
   // Returns information for computing the number key.
   virtual Major MajorKey() = 0;
   virtual int MinorKey() = 0;
-  int ThreadIndex();
 
   // BinaryOpStub needs to override this.
   virtual int GetCodeKind();
@@ -204,14 +202,12 @@ class CodeStub BASE_EMBEDDED {
   // Computes the key based on major and minor.
   uint32_t GetKey() {
     ASSERT(static_cast<int>(MajorKey()) < NUMBER_OF_IDS);
-    return ThreadKeyBits::encode(ThreadIndex()) |
-           MinorKeyBits::encode(MinorKey()) |
+    return MinorKeyBits::encode(MinorKey()) |
            MajorKeyBits::encode(MajorKey());
   }
 
-  class ThreadKeyBits: public BitField<uint32_t, 0, kThreadBits> {};
-  class MajorKeyBits: public BitField<uint32_t, kThreadBits, kMajorBits> {};
-  class MinorKeyBits: public BitField<uint32_t, kMajorBits+kThreadBits, kMinorBits> {};
+  class MajorKeyBits: public BitField<uint32_t, 0, kMajorBits> {};
+  class MinorKeyBits: public BitField<uint32_t, kMajorBits, kMinorBits> {};
 
   friend class BreakPointIterator;
 };
