@@ -3,10 +3,12 @@ async = typeof async != 'undefined' ? async : process.nextTick;
 print = typeof print != 'undefined' ? print : console.log;
 
 function isPrime(n) {
+/*
   if (n % 10 == 0) {
     var a = new Object();
     a.n = n;
   }
+*/
   for (var i = 2; i*i <= n; i++) {
     if (n % i == 0)
       return 0;
