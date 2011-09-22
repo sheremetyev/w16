@@ -2153,6 +2153,17 @@ void MacroAssembler::CheckStackAlignment() {
 }
 
 
+void MacroAssembler::CheckThread() {
+#ifdef DEBUG
+  // Make sure the code was compiled on the same thread
+  PrepareCallCFunction(0, ebx);
+  CallCFunction(ExternalReference::threadid_function(isolate()), 0);
+  cmp(eax, ThreadId::Current().ToInteger());
+  Check(equal, "Code was compiled for a different thread.");
+#endif // DEBUG
+}
+
+
 void MacroAssembler::Abort(const char* msg) {
   // We want to pass the msg string like a smi to avoid GC
   // problems, however msg is not guaranteed to be aligned

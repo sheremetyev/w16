@@ -654,6 +654,9 @@ class MacroAssembler: public Assembler {
   // Check that the stack is aligned.
   void CheckStackAlignment();
 
+  // Check that code is executing on the thread it was compiled for
+  void CheckThread();
+
   // Verify restrictions about code generated in stubs.
   void set_generating_stub(bool value) { generating_stub_ = value; }
   bool generating_stub() { return generating_stub_; }
