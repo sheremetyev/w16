@@ -377,7 +377,15 @@ class Factory {
         &isolate()->heap()->roots_[Heap::k##camel_name##RootIndex]));          \
   }
   ROOT_LIST(ROOT_ACCESSOR)
-#undef ROOT_ACCESSOR_ACCESSOR
+#undef ROOT_ACCESSOR
+
+#define ROOT_ACCESSOR(type, name, camel_name)                                  \
+  inline Handle<type> name() {                                                 \
+    return Handle<type>(BitCast<type**>(                                       \
+        &isolate()->heap()->thread_roots_[Heap::k##camel_name##ThreadRootIndex]));          \
+  }
+  THREAD_ROOT_LIST(ROOT_ACCESSOR)
+#undef ROOT_ACCESSOR
 
 #define SYMBOL_ACCESSOR(name, str)                                             \
   inline Handle<String> name() {                                               \

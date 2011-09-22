@@ -590,6 +590,9 @@ class ExternalReference BASE_EMBEDDED {
   // Static variable Heap::roots_address()
   static ExternalReference roots_address(Isolate* isolate);
 
+  // Static variable Heap::thread_roots_address()
+  static ExternalReference thread_roots_address(Isolate* isolate);
+
   // Static variable StackGuard::address_of_jslimit()
   static ExternalReference address_of_stack_limit(Isolate* isolate);
 

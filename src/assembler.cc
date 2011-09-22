@@ -825,6 +825,11 @@ ExternalReference ExternalReference::roots_address(Isolate* isolate) {
 }
 
 
+ExternalReference ExternalReference::thread_roots_address(Isolate* isolate) {
+  return ExternalReference(isolate->heap()->thread_roots_address());
+}
+
+
 ExternalReference ExternalReference::address_of_stack_limit(Isolate* isolate) {
   return ExternalReference(isolate->stack_guard()->address_of_jslimit());
 }

@@ -48,7 +48,7 @@ inline Heap* _inline_get_heap_();
 
 
 // Defines all the roots in Heap.
-#define GLOBAL_ROOT_LIST(V)                                                    \
+#define STRONG_ROOT_LIST(V)                                                    \
   /* Put the byte array map early.  We need it to be in place by the time   */ \
   /* the deserializer hits the next page, since it wants to put a byte      */ \
   /* array in the unused space at the end of the page.                      */ \
@@ -139,10 +139,6 @@ inline Heap* _inline_get_heap_();
   V(Code, js_entry_code, JsEntryCode)                                          \
   V(Code, js_construct_entry_code, JsConstructEntryCode)                       \
   V(Smi, real_stack_limit, RealStackLimit)                                     \
-
-#define STRONG_ROOT_LIST(V)                                                    \
-  GLOBAL_ROOT_LIST(V)                                                          \
-  THREAD_ROOT_LIST(V)
 
 #define ROOT_LIST(V)                                  \
   STRONG_ROOT_LIST(V)                                 \
@@ -941,6 +937,18 @@ class Heap {
   ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR
 
+  // Heap root getters.  We have versions with and without type::cast() here.
+  // You can't use type::cast during GC because the assert fails.
+#define ROOT_ACCESSOR(type, name, camel_name)                                  \
+  type* name() {                                                               \
+    return type::cast(thread_roots_[k##camel_name##ThreadRootIndex]);                       \
+  }                                                                            \
+  type* raw_unchecked_##name() {                                               \
+    return reinterpret_cast<type*>(thread_roots_[k##camel_name##ThreadRootIndex]);          \
+  }
+  THREAD_ROOT_LIST(ROOT_ACCESSOR)
+#undef ROOT_ACCESSOR
+
 // Utility type maps
 #define STRUCT_MAP_ACCESSOR(NAME, Name, name)                                  \
     Map* name##_map() {                                                        \
@@ -1044,7 +1052,7 @@ class Heap {
 
   // Sets the stub_cache_ (only used when expanding the dictionary).
   void public_set_code_stubs(NumberDictionary* value) {
-    roots_[kCodeStubsRootIndex] = value;
+    thread_roots_[kCodeStubsThreadRootIndex] = value;
   }
 
   // Support for computing object sizes for old objects during GCs. Returns
@@ -1056,7 +1064,7 @@ class Heap {
 
   // Sets the non_monomorphic_cache_ (only used when expanding the dictionary).
   void public_set_non_monomorphic_cache(NumberDictionary* value) {
-    roots_[kNonMonomorphicCacheRootIndex] = value;
+    thread_roots_[kNonMonomorphicCacheThreadRootIndex] = value;
   }
 
   void public_set_empty_script(Script* script) {
@@ -1068,6 +1076,7 @@ class Heap {
 
   // Generated code can embed this address to get access to the roots.
   Object** roots_address() { return roots_; }
+  Object** thread_roots_address() { return thread_roots_; }
 
   // Get address of global contexts list for serialization support.
   Object** global_contexts_list_address() {
@@ -1215,6 +1224,13 @@ class Heap {
     kSymbolTableRootIndex,
     kStrongRootListLength = kSymbolTableRootIndex,
     kRootListLength
+  };
+
+  enum ThreadRootListIndex {
+#define ROOT_INDEX_DECLARATION(type, name, camel_name) k##camel_name##ThreadRootIndex,
+    THREAD_ROOT_LIST(ROOT_INDEX_DECLARATION)
+#undef ROOT_INDEX_DECLARATION
+    kThreadRootListLength
   };
 
   MUST_USE_RESULT MaybeObject* NumberToString(
@@ -1370,6 +1386,13 @@ class Heap {
   ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR
 
+#define ROOT_ACCESSOR(type, name, camel_name)                                  \
+  inline void set_##name(type* value) {                                 \
+    thread_roots_[k##camel_name##ThreadRootIndex] = value;                                  \
+  }
+  THREAD_ROOT_LIST(ROOT_ACCESSOR)
+#undef ROOT_ACCESSOR
+
 #ifdef DEBUG
   bool allocation_allowed_;
 
@@ -1411,6 +1434,7 @@ class Heap {
   int old_gen_exhausted_;
 
   Object* roots_[kRootListLength];
+  Object* thread_roots_[kThreadRootListLength];
 
   Object* global_contexts_list_;
 

@@ -163,6 +163,7 @@ Heap::Heap()
   }
 
   memset(roots_, 0, sizeof(roots_[0]) * kRootListLength);
+  memset(thread_roots_, 0, sizeof(thread_roots_[0]) * kThreadRootListLength);
   global_contexts_list_ = NULL;
   mark_compact_collector_.heap_ = this;
   external_string_table_.heap_ = this;
@@ -4928,6 +4929,7 @@ void Heap::IterateWeakRoots(ObjectVisitor* v, VisitMode mode) {
 
 void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   v->VisitPointers(&roots_[0], &roots_[kStrongRootListLength]);
+  v->VisitPointers(&thread_roots_[0], &thread_roots_[kThreadRootListLength]);
   v->Synchronize("strong_root_list");
 
   v->VisitPointer(BitCast<Object**>(&hidden_symbol_));
@@ -5403,10 +5405,10 @@ void Heap::SetStackLimits() {
 
   // Set up the special root array entries containing the stack limits.
   // These are actually addresses, but the tag makes the GC ignore it.
-  roots_[kStackLimitRootIndex] =
+  thread_roots_[kStackLimitThreadRootIndex] =
       reinterpret_cast<Object*>(
           (isolate_->stack_guard()->jslimit() & ~kSmiTagMask) | kSmiTag);
-  roots_[kRealStackLimitRootIndex] =
+  thread_roots_[kRealStackLimitThreadRootIndex] =
       reinterpret_cast<Object*>(
           (isolate_->stack_guard()->real_jslimit() & ~kSmiTagMask) | kSmiTag);
 }
