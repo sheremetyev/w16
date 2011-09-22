@@ -163,10 +163,15 @@ Heap::Heap()
   }
 
   memset(roots_, 0, sizeof(roots_[0]) * kRootListLength);
-  memset(thread_roots_, 0, sizeof(thread_roots_[0]) * kThreadRootListLength);
+  memset(thread_roots_, 0, sizeof(thread_roots_));
   global_contexts_list_ = NULL;
   mark_compact_collector_.heap_ = this;
   external_string_table_.heap_ = this;
+}
+
+
+int Heap::ThreadIndex() {
+  return ThreadId::CurrentInt() - 1;
 }
 
 
@@ -2185,31 +2190,6 @@ bool Heap::CreateInitialObjects() {
   }
   set_prototype_accessors(Foreign::cast(obj));
 
-  // Allocate the code_stubs dictionary. The initial size is set to avoid
-  // expanding the dictionary during bootstrapping.
-  { MaybeObject* maybe_obj = NumberDictionary::Allocate(128);
-    if (!maybe_obj->ToObject(&obj)) return false;
-  }
-  set_code_stubs(NumberDictionary::cast(obj));
-
-  // Allocate the non_monomorphic_cache used in stub-cache.cc. The initial size
-  // is set to avoid expanding the dictionary during bootstrapping.
-  { MaybeObject* maybe_obj = NumberDictionary::Allocate(64);
-    if (!maybe_obj->ToObject(&obj)) return false;
-  }
-  set_non_monomorphic_cache(NumberDictionary::cast(obj));
-
-  { MaybeObject* maybe_obj = AllocatePolymorphicCodeCache();
-    if (!maybe_obj->ToObject(&obj)) return false;
-  }
-  set_polymorphic_code_cache(PolymorphicCodeCache::cast(obj));
-
-  set_instanceof_cache_function(Smi::FromInt(0));
-  set_instanceof_cache_map(Smi::FromInt(0));
-  set_instanceof_cache_answer(Smi::FromInt(0));
-
-  CreateFixedStubs();
-
   // Allocate the dictionary of intrinsic function names.
   { MaybeObject* maybe_obj = StringDictionary::Allocate(Runtime::kNumFunctions);
     if (!maybe_obj->ToObject(&obj)) return false;
@@ -2219,8 +2199,6 @@ bool Heap::CreateInitialObjects() {
     if (!maybe_obj->ToObject(&obj)) return false;
   }
   set_intrinsic_function_names(StringDictionary::cast(obj));
-
-  if (InitializeNumberStringCache()->IsFailure()) return false;
 
   // Allocate cache for single character ASCII strings.
   { MaybeObject* maybe_obj =
@@ -2244,18 +2222,6 @@ bool Heap::CreateInitialObjects() {
 
   // Handling of script id generation is in FACTORY->NewScript.
   set_last_script_id(undefined_value());
-
-  // Initialize keyed lookup cache.
-  isolate_->keyed_lookup_cache()->Clear();
-
-  // Initialize context slot cache.
-  isolate_->context_slot_cache()->Clear();
-
-  // Initialize descriptor cache.
-  isolate_->descriptor_lookup_cache()->Clear();
-
-  // Initialize compilation cache.
-  isolate_->compilation_cache()->Clear();
 
   return true;
 }
@@ -4929,7 +4895,7 @@ void Heap::IterateWeakRoots(ObjectVisitor* v, VisitMode mode) {
 
 void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   v->VisitPointers(&roots_[0], &roots_[kStrongRootListLength]);
-  v->VisitPointers(&thread_roots_[0], &thread_roots_[kThreadRootListLength]);
+  v->VisitPointers(&thread_roots_[0][0], &thread_roots_[MAX_THREADS][kThreadRootListLength]);
   v->Synchronize("strong_root_list");
 
   v->VisitPointer(BitCast<Object**>(&hidden_symbol_));
@@ -5397,6 +5363,54 @@ bool Heap::Setup(bool create_heap_objects) {
 }
 
 
+bool Heap::ThreadSetup() {
+  SetStackLimits();
+
+  Object* obj;
+
+  // Allocate the code_stubs dictionary. The initial size is set to avoid
+  // expanding the dictionary during bootstrapping.
+  { MaybeObject* maybe_obj = NumberDictionary::Allocate(128);
+    if (!maybe_obj->ToObject(&obj)) return false;
+  }
+  set_code_stubs(NumberDictionary::cast(obj));
+
+  // Allocate the non_monomorphic_cache used in stub-cache.cc. The initial size
+  // is set to avoid expanding the dictionary during bootstrapping.
+  { MaybeObject* maybe_obj = NumberDictionary::Allocate(64);
+    if (!maybe_obj->ToObject(&obj)) return false;
+  }
+  set_non_monomorphic_cache(NumberDictionary::cast(obj));
+
+  { MaybeObject* maybe_obj = AllocatePolymorphicCodeCache();
+    if (!maybe_obj->ToObject(&obj)) return false;
+  }
+  set_polymorphic_code_cache(PolymorphicCodeCache::cast(obj));
+
+  set_instanceof_cache_function(Smi::FromInt(0));
+  set_instanceof_cache_map(Smi::FromInt(0));
+  set_instanceof_cache_answer(Smi::FromInt(0));
+
+  CreateFixedStubs();
+
+  if (InitializeNumberStringCache()->IsFailure()) return false;
+
+  // Initialize keyed lookup cache.
+  isolate_->keyed_lookup_cache()->Clear();
+
+  // Initialize context slot cache.
+  isolate_->context_slot_cache()->Clear();
+
+  // Initialize descriptor cache.
+  isolate_->descriptor_lookup_cache()->Clear();
+
+  // Initialize compilation cache.
+  isolate_->compilation_cache()->Clear();
+
+  return true;
+}
+
+
 void Heap::SetStackLimits() {
   ASSERT(isolate_ != NULL);
   ASSERT(isolate_ == isolate());
@@ -5405,10 +5419,10 @@ void Heap::SetStackLimits() {
 
   // Set up the special root array entries containing the stack limits.
   // These are actually addresses, but the tag makes the GC ignore it.
-  thread_roots_[kStackLimitRootIndex] =
+  thread_roots()[kStackLimitRootIndex] =
       reinterpret_cast<Object*>(
           (isolate_->stack_guard()->jslimit() & ~kSmiTagMask) | kSmiTag);
-  thread_roots_[kRealStackLimitRootIndex] =
+  thread_roots()[kRealStackLimitRootIndex] =
       reinterpret_cast<Object*>(
           (isolate_->stack_guard()->real_jslimit() & ~kSmiTagMask) | kSmiTag);
 }

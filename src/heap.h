@@ -337,6 +337,7 @@ class Heap {
   // also creates the basic non-mutable objects.
   // Returns whether it succeeded.
   bool Setup(bool create_heap_objects);
+  bool ThreadSetup();
 
   // Destroys all memory allocated by the heap.
   void TearDown();
@@ -941,10 +942,10 @@ class Heap {
   // You can't use type::cast during GC because the assert fails.
 #define ROOT_ACCESSOR(type, name, camel_name)                                  \
   type* name() {                                                               \
-    return type::cast(thread_roots_[k##camel_name##RootIndex]);                       \
+    return type::cast(thread_roots()[k##camel_name##RootIndex]);               \
   }                                                                            \
   type* raw_unchecked_##name() {                                               \
-    return reinterpret_cast<type*>(thread_roots_[k##camel_name##RootIndex]);          \
+    return reinterpret_cast<type*>(thread_roots()[k##camel_name##RootIndex]);  \
   }
   THREAD_ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR
@@ -1052,7 +1053,7 @@ class Heap {
 
   // Sets the stub_cache_ (only used when expanding the dictionary).
   void public_set_code_stubs(NumberDictionary* value) {
-    thread_roots_[kCodeStubsRootIndex] = value;
+    thread_roots()[kCodeStubsRootIndex] = value;
   }
 
   // Support for computing object sizes for old objects during GCs. Returns
@@ -1064,7 +1065,7 @@ class Heap {
 
   // Sets the non_monomorphic_cache_ (only used when expanding the dictionary).
   void public_set_non_monomorphic_cache(NumberDictionary* value) {
-    thread_roots_[kNonMonomorphicCacheRootIndex] = value;
+    thread_roots()[kNonMonomorphicCacheRootIndex] = value;
   }
 
   void public_set_empty_script(Script* script) {
@@ -1076,7 +1077,8 @@ class Heap {
 
   // Generated code can embed this address to get access to the roots.
   Object** roots_address() { return roots_; }
-  Object** thread_roots_address() { return thread_roots_; }
+  Object** thread_roots_address() { return thread_roots_[ThreadIndex()]; }
+  Object** thread_roots() { return thread_roots_address(); }
 
   // Get address of global contexts list for serialization support.
   Object** global_contexts_list_address() {
@@ -1326,6 +1328,8 @@ class Heap {
  private:
   Heap();
 
+  static int ThreadIndex();
+
   // This can be calculated directly from a pointer to the heap; however, it is
   // more expedient to get at the isolate directly from within Heap methods.
   Isolate* isolate_;
@@ -1388,7 +1392,7 @@ class Heap {
 
 #define ROOT_ACCESSOR(type, name, camel_name)                                  \
   inline void set_##name(type* value) {                                 \
-    thread_roots_[k##camel_name##RootIndex] = value;                                  \
+    thread_roots()[k##camel_name##RootIndex] = value;                                  \
   }
   THREAD_ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR
@@ -1434,7 +1438,7 @@ class Heap {
   int old_gen_exhausted_;
 
   Object* roots_[kRootListLength];
-  Object* thread_roots_[kThreadRootListLength];
+  Object* thread_roots_[MAX_THREADS][kThreadRootListLength];
 
   Object* global_contexts_list_;
 

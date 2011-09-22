@@ -1600,10 +1600,6 @@ bool Isolate::Init(Deserializer* des) {
   memory_allocator_ = new MemoryAllocator(this);
   code_range_ = new CodeRange(this);
 
-  // Safe after setting Heap::isolate_, initializing StackGuard and
-  // ensuring that Isolate::Current() == this.
-  heap_.SetStackLimits();
-
   bootstrapper_ = new Bootstrapper();
 
   // Enable logging before setting up the heap
@@ -1625,6 +1621,20 @@ bool Isolate::Init(Deserializer* des) {
   if (!heap_.Setup(create_heap_objects)) {
     V8::SetFatalError();
     return false;
+  }
+
+  { int current_thread = Thread::GetThreadLocalInt(thread_id_key_);
+    void* current_top = Thread::GetThreadLocal(thread_local_top_key_);
+    for (int i = 0; i < MAX_THREADS; i++) {
+      Thread::SetThreadLocalInt(thread_id_key_, i + 1);
+      Thread::SetThreadLocal(thread_local_top_key_, tops_[i]);
+      if (!heap_.ThreadSetup()) {
+        V8::SetFatalError();
+        return false;
+      }
+    }
+    Thread::SetThreadLocalInt(thread_id_key_, current_thread);
+    Thread::SetThreadLocal(thread_local_top_key_, current_top);
   }
 
   InitializeThreadLocal();
