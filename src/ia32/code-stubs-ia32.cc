@@ -4493,6 +4493,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   Label invoke, exit;
   Label not_outermost_js, not_outermost_js_2;
 
+  __ CheckThread();
+
   // Setup frame.
   __ push(ebp);
   __ mov(ebp, Operand(esp));
