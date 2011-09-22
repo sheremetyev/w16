@@ -1637,8 +1637,6 @@ bool Isolate::Init(Deserializer* des) {
     Thread::SetThreadLocal(thread_local_top_key_, current_top);
   }
 
-  InitializeThreadLocal();
-
   bootstrapper_->Initialize(create_heap_objects);
 
   // initialize Builtins for all threads
@@ -1708,6 +1706,7 @@ void Isolate::Enter() {
   Thread::SetThreadLocal(thread_local_top_key_, top);
 
   top->Enter(this);
+  InitializeThreadLocal();
 }
 
 
