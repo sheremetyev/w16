@@ -48,7 +48,7 @@ inline Heap* _inline_get_heap_();
 
 
 // Defines all the roots in Heap.
-#define STRONG_ROOT_LIST(V)                                      \
+#define GLOBAL_ROOT_LIST(V)                                                    \
   /* Put the byte array map early.  We need it to be in place by the time   */ \
   /* the deserializer hits the next page, since it wants to put a byte      */ \
   /* array in the unused space at the end of the page.                      */ \
@@ -71,13 +71,6 @@ inline Heap* _inline_get_heap_();
   V(Object, no_interceptor_result_sentinel, NoInterceptorResultSentinel)       \
   V(Map, meta_map, MetaMap)                                                    \
   V(Map, hash_table_map, HashTableMap)                                         \
-  V(Smi, stack_limit, StackLimit)                                              \
-  V(FixedArray, number_string_cache, NumberStringCache)                        \
-  V(Object, instanceof_cache_function, InstanceofCacheFunction)                \
-  V(Object, instanceof_cache_map, InstanceofCacheMap)                          \
-  V(Object, instanceof_cache_answer, InstanceofCacheAnswer)                    \
-  V(FixedArray, single_character_string_cache, SingleCharacterStringCache)     \
-  V(FixedArray, string_split_cache, StringSplitCache)                          \
   V(Object, termination_exception, TerminationException)                       \
   V(FixedArray, empty_fixed_array, EmptyFixedArray)                            \
   V(ByteArray, empty_byte_array, EmptyByteArray)                               \
@@ -127,16 +120,29 @@ inline Heap* _inline_get_heap_();
   V(Map, neander_map, NeanderMap)                                              \
   V(JSObject, message_listeners, MessageListeners)                             \
   V(Foreign, prototype_accessors, PrototypeAccessors)                          \
+  V(FixedArray, natives_source_cache, NativesSourceCache)                      \
+  V(Object, last_script_id, LastScriptId)                                      \
+  V(Script, empty_script, EmptyScript)                                         \
+  V(StringDictionary, intrinsic_function_names, IntrinsicFunctionNames)        \
+
+#define THREAD_ROOT_LIST(V)                                                    \
+  V(Smi, stack_limit, StackLimit)                                              \
+  V(FixedArray, number_string_cache, NumberStringCache)                        \
+  V(Object, instanceof_cache_function, InstanceofCacheFunction)                \
+  V(Object, instanceof_cache_map, InstanceofCacheMap)                          \
+  V(Object, instanceof_cache_answer, InstanceofCacheAnswer)                    \
+  V(FixedArray, single_character_string_cache, SingleCharacterStringCache)     \
+  V(FixedArray, string_split_cache, StringSplitCache)                          \
   V(NumberDictionary, code_stubs, CodeStubs)                                   \
   V(NumberDictionary, non_monomorphic_cache, NonMonomorphicCache)              \
   V(PolymorphicCodeCache, polymorphic_code_cache, PolymorphicCodeCache)        \
   V(Code, js_entry_code, JsEntryCode)                                          \
   V(Code, js_construct_entry_code, JsConstructEntryCode)                       \
-  V(FixedArray, natives_source_cache, NativesSourceCache)                      \
-  V(Object, last_script_id, LastScriptId)                                      \
-  V(Script, empty_script, EmptyScript)                                         \
   V(Smi, real_stack_limit, RealStackLimit)                                     \
-  V(StringDictionary, intrinsic_function_names, IntrinsicFunctionNames)        \
+
+#define STRONG_ROOT_LIST(V)                                                    \
+  GLOBAL_ROOT_LIST(V)                                                          \
+  THREAD_ROOT_LIST(V)
 
 #define ROOT_LIST(V)                                  \
   STRONG_ROOT_LIST(V)                                 \
