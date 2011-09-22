@@ -4317,6 +4317,8 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ CheckStackAlignment();
   }
 
+  __ CheckThread();
+
   if (do_gc) {
     // Pass failure code returned from last attempt as first argument to
     // PerformGC. No need to use PrepareCallCFunction/CallCFunction here as the
