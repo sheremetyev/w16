@@ -3751,7 +3751,7 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
   // Load the number string cache.
   ExternalReference thread_roots_address =
       ExternalReference::thread_roots_address(masm->isolate());
-  __ mov(scratch, Immediate(Heap::kNumberStringCacheThreadRootIndex));
+  __ mov(scratch, Immediate(Heap::kNumberStringCacheRootIndex));
   __ mov(number_string_cache,
          Operand::StaticArray(scratch, times_pointer_size, thread_roots_address));
   // Make the hash mask from the length of the number string cache. It
@@ -4649,15 +4649,15 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   if (!HasCallSiteInlineCheck()) {
     // Look up the function and the map in the instanceof cache.
     Label miss;
-    __ mov(scratch, Immediate(Heap::kInstanceofCacheFunctionThreadRootIndex));
+    __ mov(scratch, Immediate(Heap::kInstanceofCacheFunctionRootIndex));
     __ cmp(function,
            Operand::StaticArray(scratch, times_pointer_size, thread_roots_address));
     __ j(not_equal, &miss, Label::kNear);
-    __ mov(scratch, Immediate(Heap::kInstanceofCacheMapThreadRootIndex));
+    __ mov(scratch, Immediate(Heap::kInstanceofCacheMapRootIndex));
     __ cmp(map, Operand::StaticArray(
         scratch, times_pointer_size, thread_roots_address));
     __ j(not_equal, &miss, Label::kNear);
-    __ mov(scratch, Immediate(Heap::kInstanceofCacheAnswerThreadRootIndex));
+    __ mov(scratch, Immediate(Heap::kInstanceofCacheAnswerRootIndex));
     __ mov(eax, Operand::StaticArray(
         scratch, times_pointer_size, thread_roots_address));
     __ ret((HasArgsInRegisters() ? 0 : 2) * kPointerSize);
@@ -4674,9 +4674,9 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   // Update the global instanceof or call site inlined cache with the current
   // map and function. The cached answer will be set when it is known below.
   if (!HasCallSiteInlineCheck()) {
-  __ mov(scratch, Immediate(Heap::kInstanceofCacheMapThreadRootIndex));
+  __ mov(scratch, Immediate(Heap::kInstanceofCacheMapRootIndex));
   __ mov(Operand::StaticArray(scratch, times_pointer_size, thread_roots_address), map);
-  __ mov(scratch, Immediate(Heap::kInstanceofCacheFunctionThreadRootIndex));
+  __ mov(scratch, Immediate(Heap::kInstanceofCacheFunctionRootIndex));
   __ mov(Operand::StaticArray(scratch, times_pointer_size, thread_roots_address),
          function);
   } else {
@@ -4712,7 +4712,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   __ bind(&is_instance);
   if (!HasCallSiteInlineCheck()) {
     __ Set(eax, Immediate(0));
-    __ mov(scratch, Immediate(Heap::kInstanceofCacheAnswerThreadRootIndex));
+    __ mov(scratch, Immediate(Heap::kInstanceofCacheAnswerRootIndex));
     __ mov(Operand::StaticArray(scratch,
                                 times_pointer_size, thread_roots_address), eax);
   } else {
@@ -4734,7 +4734,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   __ bind(&is_not_instance);
   if (!HasCallSiteInlineCheck()) {
     __ Set(eax, Immediate(Smi::FromInt(1)));
-    __ mov(scratch, Immediate(Heap::kInstanceofCacheAnswerThreadRootIndex));
+    __ mov(scratch, Immediate(Heap::kInstanceofCacheAnswerRootIndex));
     __ mov(Operand::StaticArray(
         scratch, times_pointer_size, thread_roots_address), eax);
   } else {

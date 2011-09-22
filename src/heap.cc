@@ -5405,10 +5405,10 @@ void Heap::SetStackLimits() {
 
   // Set up the special root array entries containing the stack limits.
   // These are actually addresses, but the tag makes the GC ignore it.
-  thread_roots_[kStackLimitThreadRootIndex] =
+  thread_roots_[kStackLimitRootIndex] =
       reinterpret_cast<Object*>(
           (isolate_->stack_guard()->jslimit() & ~kSmiTagMask) | kSmiTag);
-  thread_roots_[kRealStackLimitThreadRootIndex] =
+  thread_roots_[kRealStackLimitRootIndex] =
       reinterpret_cast<Object*>(
           (isolate_->stack_guard()->real_jslimit() & ~kSmiTagMask) | kSmiTag);
 }
