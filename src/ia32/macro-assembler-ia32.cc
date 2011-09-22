@@ -1601,6 +1601,9 @@ void MacroAssembler::PrepareCallApiFunction(int argc) {
 
 MaybeObject* MacroAssembler::TryCallApiFunctionAndReturn(ApiFunction* function,
                                                          int stack_space) {
+
+  CheckThread();
+
   ExternalReference next_address =
       ExternalReference::handle_scope_next_address();
   ExternalReference limit_address =
