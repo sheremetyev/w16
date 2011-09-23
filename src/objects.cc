@@ -6436,6 +6436,18 @@ int SharedFunctionInfo::CodeOffset() {
 }
 
 
+int SharedFunctionInfo::ConstructStubOffset(int thread_id) {
+  ASSERT(thread_id < MAX_THREADS);
+  return kConstructStubOffsetStart + thread_id * kPointerSize;
+}
+
+
+int SharedFunctionInfo::ConstructStubOffset() {
+  int thread_id = ThreadId::CurrentInt() - 1;
+  return ConstructStubOffset(thread_id);
+}
+
+
 String* SharedFunctionInfo::DebugName() {
   Object* n = name();
   if (!n->IsString() || String::cast(n)->length() == 0) return inferred_name();
@@ -6730,7 +6742,7 @@ void SharedFunctionInfo::DetachInitialMap() {
   set_initial_map(map->heap()->raw_unchecked_undefined_value());
   Builtins* builtins = map->heap()->isolate()->builtins();
   ASSERT_EQ(builtins->builtin(Builtins::kJSConstructStubCountdown),
-            *RawField(this, kConstructStubOffset));
+            *RawField(this, ConstructStubOffset()));
   set_construct_stub(builtins->builtin(Builtins::kJSConstructStubGeneric));
   // It is safe to clear the flag: it will be set again if the map is live.
   set_live_objects_may_exist(false);
@@ -6746,7 +6758,7 @@ void SharedFunctionInfo::AttachInitialMap(Map* map) {
   set_initial_map(map);
   Builtins* builtins = map->heap()->isolate()->builtins();
   ASSERT_EQ(builtins->builtin(Builtins::kJSConstructStubGeneric),
-            *RawField(this, kConstructStubOffset));
+            *RawField(this, ConstructStubOffset()));
   set_construct_stub(builtins->builtin(Builtins::kJSConstructStubCountdown));
   // The map survived the gc, so there may be objects referencing it.
   set_live_objects_may_exist(true);

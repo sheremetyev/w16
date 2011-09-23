@@ -3414,7 +3414,6 @@ ACCESSORS(BreakPointInfo, break_point_objects, Object, kBreakPointObjectsIndex)
 #endif
 
 ACCESSORS(SharedFunctionInfo, name, Object, kNameOffset)
-ACCESSORS_GCSAFE(SharedFunctionInfo, construct_stub, Code, kConstructStubOffset)
 ACCESSORS_GCSAFE(SharedFunctionInfo, initial_map, Object, kInitialMapOffset)
 ACCESSORS(SharedFunctionInfo, instance_class_name, Object,
           kInstanceClassNameOffset)
@@ -3638,6 +3637,33 @@ void SharedFunctionInfo::set_code(Code* value, WriteBarrierMode mode) {
 
   WRITE_FIELD(this, CodeOffset(), value);
   ASSERT(!Isolate::Current()->heap()->InNewSpace(value));
+}
+
+
+Code* SharedFunctionInfo::construct_stub() {
+  return Code::cast(READ_FIELD(this, ConstructStubOffset()));
+}
+
+void SharedFunctionInfo::set_construct_stub(Code* value, WriteBarrierMode mode) {
+  Builtins* builtins = Isolate::Current()->builtins();
+  Builtins::Name id = builtins->lookupid(value);
+
+  // TODO(w16): handle specialized construct stubs
+  ASSERT(id != Builtins::kNotBuiltin);
+  if (id != Builtins::kNotBuiltin) {
+    // replace other threads' code
+    for (int i = 0; i < MAX_THREADS; i++) {
+      Code* others_code = builtins->builtin(id, i);
+      ASSERT(others_code->IsCode());
+      int offset = ConstructStubOffset(i);
+      WRITE_FIELD(this, offset, others_code);
+      CONDITIONAL_WRITE_BARRIER(HEAP, this, offset, mode);
+    }
+  }
+
+  int offset = ConstructStubOffset();
+  WRITE_FIELD(this, offset, value);
+  CONDITIONAL_WRITE_BARRIER(HEAP, this, offset, mode);
 }
 
 

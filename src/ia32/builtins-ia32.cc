@@ -89,7 +89,7 @@ void Builtins::Generate_JSConstructCall(MacroAssembler* masm) {
 
   // Jump to the function-specific construct stub.
   __ mov(ebx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
-  __ mov(ebx, FieldOperand(ebx, SharedFunctionInfo::kConstructStubOffset));
+  __ mov(ebx, FieldOperand(ebx, SharedFunctionInfo::ConstructStubOffset()));
   __ lea(ebx, FieldOperand(ebx, Code::kHeaderSize));
   __ jmp(Operand(ebx));
 

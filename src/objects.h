@@ -4816,9 +4816,12 @@ class SharedFunctionInfo: public HeapObject {
   static const int kCodeOffsetStart = kNameOffset + kPointerSize;
   static const int kCodeOffsetEnd = kCodeOffsetStart + kPointerSize * MAX_THREADS;
   static const int kScopeInfoOffset = kCodeOffsetEnd;
-  static const int kConstructStubOffset = kScopeInfoOffset + kPointerSize;
+  static int ConstructStubOffset(int thread_id);
+  static int ConstructStubOffset();
+  static const int kConstructStubOffsetStart = kScopeInfoOffset + kPointerSize;
+  static const int kConstructStubOffsetEnd = kConstructStubOffsetStart + kPointerSize * MAX_THREADS;
   static const int kInstanceClassNameOffset =
-      kConstructStubOffset + kPointerSize;
+      kConstructStubOffsetEnd;
   static const int kFunctionDataOffset =
       kInstanceClassNameOffset + kPointerSize;
   static const int kScriptOffset = kFunctionDataOffset + kPointerSize;
