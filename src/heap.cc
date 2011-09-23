@@ -4895,7 +4895,9 @@ void Heap::IterateWeakRoots(ObjectVisitor* v, VisitMode mode) {
 
 void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   v->VisitPointers(&roots_[0], &roots_[kStrongRootListLength]);
-  v->VisitPointers(&thread_roots_[0][0], &thread_roots_[MAX_THREADS][kThreadRootListLength]);
+  for (int i = 0; i < MAX_THREADS; i++) {
+    v->VisitPointers(&thread_roots_[i][0], &thread_roots_[i][kThreadRootListLength]);
+  }
   v->Synchronize("strong_root_list");
 
   v->VisitPointer(BitCast<Object**>(&hidden_symbol_));
