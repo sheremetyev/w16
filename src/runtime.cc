@@ -2129,7 +2129,8 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_SetCode) {
     // SetCode is only used for built-in constructors like String,
     // Array, and Object, and some web code
     // doesn't like seeing source code for constructors.
-    target->shared()->set_script(isolate->heap()->undefined_value());
+    // TODO(w16): compile built-ins for all threads without storing source
+    target->shared()->set_script(shared->script());
     target->shared()->code()->set_optimizable(false);
     // Clear the optimization hints related to the compiled code as these are no
     // longer valid when the code is overwritten.
