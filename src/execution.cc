@@ -150,6 +150,8 @@ Handle<Object> Execution::Call(Handle<Object> callable,
                                Object*** args,
                                bool* pending_exception,
                                bool convert_receiver) {
+  *pending_exception = false;
+
   if (!callable->IsJSFunction()) {
     callable = TryGetFunctionDelegate(callable, pending_exception);
     if (*pending_exception) return callable;
@@ -194,6 +196,7 @@ Handle<Object> Execution::TryCall(Handle<JSFunction> func,
   v8::TryCatch catcher;
   catcher.SetVerbose(false);
   catcher.SetCaptureMessage(false);
+  *caught_exception = false;
 
   Handle<Object> result = Invoke(false, func, receiver, argc, args,
                                  caught_exception);
@@ -376,7 +379,7 @@ void StackGuard::DisableInterrupts() {
 
 bool StackGuard::IsInterrupted() {
   ExecutionAccess access(isolate_);
-  return thread_local_.interrupt_flags_ & INTERRUPT;
+  return (thread_local_.interrupt_flags_ & INTERRUPT) != 0;
 }
 
 
@@ -402,7 +405,7 @@ void StackGuard::Preempt() {
 
 bool StackGuard::IsTerminateExecution() {
   ExecutionAccess access(isolate_);
-  return thread_local_.interrupt_flags_ & TERMINATE;
+  return (thread_local_.interrupt_flags_ & TERMINATE) != 0;
 }
 
 
@@ -415,7 +418,7 @@ void StackGuard::TerminateExecution() {
 
 bool StackGuard::IsRuntimeProfilerTick() {
   ExecutionAccess access(isolate_);
-  return thread_local_.interrupt_flags_ & RUNTIME_PROFILER_TICK;
+  return (thread_local_.interrupt_flags_ & RUNTIME_PROFILER_TICK) != 0;
 }
 
 
@@ -428,6 +431,22 @@ void StackGuard::RequestRuntimeProfilerTick() {
       isolate_->heap()->SetStackLimits();
     }
     ExecutionAccess::Unlock(isolate_);
+  }
+}
+
+
+bool StackGuard::IsGCRequest() {
+  ExecutionAccess access(isolate_);
+  return (thread_local_.interrupt_flags_ & GC_REQUEST) != 0;
+}
+
+
+void StackGuard::RequestGC() {
+  ExecutionAccess access(isolate_);
+  thread_local_.interrupt_flags_ |= GC_REQUEST;
+  if (thread_local_.postpone_interrupts_nesting_ == 0) {
+    thread_local_.jslimit_ = thread_local_.climit_ = kInterruptLimit;
+    isolate_->heap()->SetStackLimits();
   }
 }
 
@@ -700,7 +719,7 @@ Handle<String> Execution::GetStackTraceLine(Handle<Object> recv,
                           Handle<Object>::cast(fun).location(),
                           pos.location(),
                           is_global.location() };
-  bool caught_exception = false;
+  bool caught_exception;
   Handle<Object> result =
       TryCall(isolate->get_stack_trace_line_fun(),
               isolate->js_builtins_object(), argc, args,
@@ -782,6 +801,12 @@ void Execution::ProcessDebugMesssages(bool debug_command_only) {
 MaybeObject* Execution::HandleStackGuardInterrupt() {
   Isolate* isolate = Isolate::Current();
   StackGuard* stack_guard = isolate->stack_guard();
+
+  if (stack_guard->IsGCRequest()) {
+    isolate->heap()->CollectAllGarbage(false);
+    stack_guard->Continue(GC_REQUEST);
+  }
+
   isolate->counters()->stack_interrupts()->Increment();
   if (stack_guard->IsRuntimeProfilerTick()) {
     isolate->counters()->runtime_profiler_ticks()->Increment();

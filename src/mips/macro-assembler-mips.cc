@@ -821,6 +821,7 @@ void MacroAssembler::MultiPopReversedFPU(RegList regs) {
 void MacroAssembler::FlushICache(Register address, unsigned instructions) {
   RegList saved_regs = kJSCallerSaved | ra.bit();
   MultiPush(saved_regs);
+  AllowExternalCallThatCantCauseGC scope(this);
 
   // Save to a0 in case address == t0.
   Move(a0, address);
@@ -3162,7 +3163,8 @@ void MacroAssembler::CopyBytes(Register src,
 void MacroAssembler::CheckFastElements(Register map,
                                        Register scratch,
                                        Label* fail) {
-  STATIC_ASSERT(FAST_ELEMENTS == 0);
+  STATIC_ASSERT(FAST_SMI_ONLY_ELEMENTS == 0);
+  STATIC_ASSERT(FAST_ELEMENTS == 1);
   lbu(scratch, FieldMemOperand(map, Map::kBitField2Offset));
   Branch(fail, hi, scratch, Operand(Map::kMaximumBitField2FastElementValue));
 }

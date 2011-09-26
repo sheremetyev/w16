@@ -221,7 +221,7 @@ static void GenerateDictionaryStore(MacroAssembler* masm,
 
   // Update write barrier. Make sure not to clobber the value.
   __ movq(scratch0, value);
-  __ RecordWrite(elements, scratch1, scratch0);
+  __ RecordWrite(elements, scratch1, scratch0, kDontSaveFPRegs);
 }
 
 
@@ -692,16 +692,27 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // rax: value
   // rbx: receiver's elements array (a FixedArray)
   // rcx: index
+
   Label non_smi_value;
+  __ JumpIfNotSmi(rax, &non_smi_value);
+  // It's irrelevant whether array is smi-only or not when writing a smi.
   __ movq(FieldOperand(rbx, rcx, times_pointer_size, FixedArray::kHeaderSize),
           rax);
-  __ JumpIfNotSmi(rax, &non_smi_value, Label::kNear);
   __ ret(0);
+
   __ bind(&non_smi_value);
-  // Slow case that needs to retain rcx for use by RecordWrite.
-  // Update write barrier for the elements array address.
+  if (FLAG_smi_only_arrays) {
+    // Writing a non-smi, check whether array allows non-smi elements.
+    __ movq(rdi, FieldOperand(rdx, HeapObject::kMapOffset));
+    __ CheckFastObjectElements(rdi, &slow, Label::kNear);
+  }
+  __ movq(FieldOperand(rbx, rcx, times_pointer_size, FixedArray::kHeaderSize),
+          rax);
   __ movq(rdx, rax);
-  __ RecordWriteNonSmi(rbx, 0, rdx, rcx);
+  __ lea(rcx,
+         FieldOperand(rbx, rcx, times_pointer_size, FixedArray::kHeaderSize));
+  __ RecordWrite(
+      rbx, rcx, rdx, kDontSaveFPRegs, EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
   __ ret(0);
 }
 
@@ -1214,7 +1225,12 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
   __ movq(mapped_location, rax);
   __ lea(r9, mapped_location);
   __ movq(r8, rax);
-  __ RecordWrite(rbx, r9, r8);
+  __ RecordWrite(rbx,
+                 r9,
+                 r8,
+                 kDontSaveFPRegs,
+                 EMIT_REMEMBERED_SET,
+                 INLINE_SMI_CHECK);
   __ Ret();
   __ bind(&notin);
   // The unmapped lookup expects that the parameter map is in rbx.
@@ -1223,7 +1239,12 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
   __ movq(unmapped_location, rax);
   __ lea(r9, unmapped_location);
   __ movq(r8, rax);
-  __ RecordWrite(rbx, r9, r8);
+  __ RecordWrite(rbx,
+                 r9,
+                 r8,
+                 kDontSaveFPRegs,
+                 EMIT_REMEMBERED_SET,
+                 INLINE_SMI_CHECK);
   __ Ret();
   __ bind(&slow);
   GenerateMiss(masm, false);

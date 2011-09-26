@@ -71,10 +71,15 @@ bool LCodeGen::GenerateCode() {
   status_ = GENERATING;
   CpuFeatures::Scope scope(SSE2);
 
+  CodeStub::GenerateFPStubs();
+
   // Open a frame scope to indicate that there is a frame on the stack.  The
   // MANUAL indicates that the scope shouldn't actually generate code to set up
   // the frame (that is done in GeneratePrologue).
   FrameScope frame_scope(masm_, StackFrame::MANUAL);
+
+  dynamic_frame_alignment_ = chunk()->num_double_slots() > 2 ||
+                             info()->osr_ast_id() != AstNode::kNoNumber;
 
   return GeneratePrologue() &&
       GenerateBody() &&
@@ -150,6 +155,29 @@ bool LCodeGen::GeneratePrologue() {
     __ bind(&ok);
   }
 
+  if (dynamic_frame_alignment_) {
+    Label do_not_pad, align_loop;
+    STATIC_ASSERT(kDoubleSize == 2 * kPointerSize);
+    // Align esp to a multiple of 2 * kPointerSize.
+    __ test(esp, Immediate(kPointerSize));
+    __ j(zero, &do_not_pad, Label::kNear);
+    __ push(Immediate(0));
+    __ mov(ebx, esp);
+    // Copy arguments, receiver, and return address.
+    __ mov(ecx, Immediate(scope()->num_parameters() + 2));
+
+    __ bind(&align_loop);
+    __ mov(eax, Operand(ebx, 1 * kPointerSize));
+    __ mov(Operand(ebx, 0), eax);
+    __ add(Operand(ebx), Immediate(kPointerSize));
+    __ dec(ecx);
+    __ j(not_zero, &align_loop, Label::kNear);
+    __ mov(Operand(ebx, 0),
+           Immediate(isolate()->factory()->frame_alignment_marker()));
+
+    __ bind(&do_not_pad);
+  }
+
   __ push(ebp);  // Caller's frame pointer.
   __ mov(ebp, esp);
   __ push(esi);  // Callee's context.
@@ -210,11 +238,12 @@ bool LCodeGen::GeneratePrologue() {
         // Store it in the context.
         int context_offset = Context::SlotOffset(var->index());
         __ mov(Operand(esi, context_offset), eax);
-        // Update the write barrier. This clobbers all involved
-        // registers, so we have to use a third register to avoid
-        // clobbering esi.
-        __ mov(ecx, esi);
-        __ RecordWrite(ecx, context_offset, eax, ebx);
+        // Update the write barrier. This clobbers eax and ebx.
+        __ RecordWriteContextSlot(esi,
+                                  context_offset,
+                                  eax,
+                                  ebx,
+                                  kDontSaveFPRegs);
       }
     }
     Comment(";;; End allocate local context");
@@ -675,7 +704,7 @@ void LCodeGen::RecordSafepoint(
     int arguments,
     int deoptimization_index) {
   ASSERT(kind == expected_safepoint_kind_);
-  const ZoneList<LOperand*>* operands = pointers->operands();
+  const ZoneList<LOperand*>* operands = pointers->GetNormalizedOperands();
   Safepoint safepoint = safepoints_.DefineSafepoint(masm(),
       kind, arguments, deoptimization_index);
   for (int i = 0; i < operands->length(); i++) {
@@ -1583,23 +1612,33 @@ void LCodeGen::DoCmpConstantEqAndBranch(LCmpConstantEqAndBranch* instr) {
 }
 
 
-void LCodeGen::DoIsNullAndBranch(LIsNullAndBranch* instr) {
+void LCodeGen::DoIsNilAndBranch(LIsNilAndBranch* instr) {
   Register reg = ToRegister(instr->InputAt(0));
-
-  // TODO(fsc): If the expression is known to be a smi, then it's
-  // definitely not null. Jump to the false block.
-
-  int true_block = chunk_->LookupDestination(instr->true_block_id());
   int false_block = chunk_->LookupDestination(instr->false_block_id());
 
-  __ cmp(reg, factory()->null_value());
-  if (instr->is_strict()) {
+  // If the expression is known to be untagged or a smi, then it's definitely
+  // not null, and it can't be a an undetectable object.
+  if (instr->hydrogen()->representation().IsSpecialization() ||
+      instr->hydrogen()->type().IsSmi()) {
+    EmitGoto(false_block);
+    return;
+  }
+
+  int true_block = chunk_->LookupDestination(instr->true_block_id());
+  Handle<Object> nil_value = instr->nil() == kNullValue ?
+      factory()->null_value() :
+      factory()->undefined_value();
+  __ cmp(reg, nil_value);
+  if (instr->kind() == kStrictEquality) {
     EmitBranch(true_block, false_block, equal);
   } else {
+    Handle<Object> other_nil_value = instr->nil() == kNullValue ?
+        factory()->undefined_value() :
+        factory()->null_value();
     Label* true_label = chunk_->GetAssemblyLabel(true_block);
     Label* false_label = chunk_->GetAssemblyLabel(false_block);
     __ j(equal, true_label);
-    __ cmp(reg, factory()->undefined_value());
+    __ cmp(reg, other_nil_value);
     __ j(equal, true_label);
     __ JumpIfSmi(reg, false_label);
     // Check for undetectable objects by looking in the bit field in
@@ -1751,28 +1790,36 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
   ASSERT(!input.is(temp));
   ASSERT(!temp.is(temp2));  // But input and temp2 may be the same register.
   __ JumpIfSmi(input, is_false);
-  __ CmpObjectType(input, FIRST_SPEC_OBJECT_TYPE, temp);
-  __ j(below, is_false);
 
-  // Map is now in temp.
-  // Functions have class 'Function'.
-  __ CmpInstanceType(temp, FIRST_CALLABLE_SPEC_OBJECT_TYPE);
   if (class_name->IsEqualTo(CStrVector("Function"))) {
-    __ j(above_equal, is_true);
+    // Assuming the following assertions, we can use the same compares to test
+    // for both being a function type and being in the object type range.
+    STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
+    STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
+                  FIRST_SPEC_OBJECT_TYPE + 1);
+    STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
+                  LAST_SPEC_OBJECT_TYPE - 1);
+    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
+    __ CmpObjectType(input, FIRST_SPEC_OBJECT_TYPE, temp);
+    __ j(below, is_false);
+    __ j(equal, is_true);
+    __ CmpInstanceType(temp, LAST_SPEC_OBJECT_TYPE);
+    __ j(equal, is_true);
   } else {
-    __ j(above_equal, is_false);
+    // Faster code path to avoid two compares: subtract lower bound from the
+    // actual type and do a signed compare with the width of the type range.
+    __ mov(temp, FieldOperand(input, HeapObject::kMapOffset));
+    __ mov(temp2, FieldOperand(temp, Map::kInstanceTypeOffset));
+    __ sub(Operand(temp2), Immediate(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
+    __ cmpb(Operand(temp2),
+            static_cast<int8_t>(LAST_NONCALLABLE_SPEC_OBJECT_TYPE -
+                                FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
+    __ j(above, is_false);
   }
 
+  // Now we are in the FIRST-LAST_NONCALLABLE_SPEC_OBJECT_TYPE range.
   // Check if the constructor in the map is a function.
   __ mov(temp, FieldOperand(temp, Map::kConstructorOffset));
-
-  // As long as LAST_CALLABLE_SPEC_OBJECT_TYPE is the last instance type, and
-  // FIRST_CALLABLE_SPEC_OBJECT_TYPE comes right after
-  // LAST_NONCALLABLE_SPEC_OBJECT_TYPE, we can avoid checking for the latter.
-  STATIC_ASSERT(LAST_TYPE == LAST_CALLABLE_SPEC_OBJECT_TYPE);
-  STATIC_ASSERT(FIRST_CALLABLE_SPEC_OBJECT_TYPE ==
-                LAST_NONCALLABLE_SPEC_OBJECT_TYPE + 1);
-
   // Objects with a non-function constructor have class 'Object'.
   __ CmpObjectType(temp, JS_FUNCTION_TYPE, temp2);
   if (class_name->IsEqualTo(CStrVector("Object"))) {
@@ -1997,6 +2044,17 @@ void LCodeGen::DoReturn(LReturn* instr) {
   }
   __ mov(esp, ebp);
   __ pop(ebp);
+  if (dynamic_frame_alignment_) {
+    Label aligned;
+    // Frame alignment marker (padding) is below arguments,
+    // and receiver, so its return-address-relative offset is
+    // (num_arguments + 2) words.
+    __ cmp(Operand(esp, (GetParameterCount() + 2) * kPointerSize),
+           Immediate(factory()->frame_alignment_marker()));
+    __ j(not_equal, &aligned);
+    __ Ret((GetParameterCount() + 2) * kPointerSize, ecx);
+    __ bind(&aligned);
+  }
   __ Ret((GetParameterCount() + 1) * kPointerSize, ecx);
 }
 
@@ -2025,20 +2083,34 @@ void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
 
 
 void LCodeGen::DoStoreGlobalCell(LStoreGlobalCell* instr) {
+  Register object = ToRegister(instr->TempAt(0));
+  Register address = ToRegister(instr->TempAt(1));
   Register value = ToRegister(instr->InputAt(0));
-  Operand cell_operand = Operand::Cell(instr->hydrogen()->cell());
+  ASSERT(!value.is(object));
+  Handle<JSGlobalPropertyCell> cell_handle(instr->hydrogen()->cell());
+
+  int offset = JSGlobalPropertyCell::kValueOffset;
+  __ mov(object, Immediate(cell_handle));
 
   // If the cell we are storing to contains the hole it could have
   // been deleted from the property dictionary. In that case, we need
   // to update the property details in the property dictionary to mark
   // it as no longer deleted. We deoptimize in that case.
   if (instr->hydrogen()->check_hole_value()) {
-    __ cmp(cell_operand, factory()->the_hole_value());
+    __ cmp(FieldOperand(object, offset), factory()->the_hole_value());
     DeoptimizeIf(equal, instr->environment());
   }
 
   // Store the value.
-  __ mov(cell_operand, value);
+  __ mov(FieldOperand(object, offset), value);
+
+  // Cells are always in the remembered set.
+  __ RecordWriteField(object,
+                      offset,
+                      value,
+                      address,
+                      kSaveFPRegs,
+                      OMIT_REMEMBERED_SET);
 }
 
 
@@ -2069,7 +2141,7 @@ void LCodeGen::DoStoreContextSlot(LStoreContextSlot* instr) {
   if (instr->needs_write_barrier()) {
     Register temp = ToRegister(instr->TempAt(0));
     int offset = Context::SlotOffset(instr->slot_index());
-    __ RecordWrite(context, offset, value, temp);
+    __ RecordWriteContextSlot(context, offset, value, temp, kSaveFPRegs);
   }
 }
 
@@ -2365,6 +2437,7 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
         break;
       case EXTERNAL_FLOAT_ELEMENTS:
       case EXTERNAL_DOUBLE_ELEMENTS:
+      case FAST_SMI_ONLY_ELEMENTS:
       case FAST_ELEMENTS:
       case FAST_DOUBLE_ELEMENTS:
       case DICTIONARY_ELEMENTS:
@@ -3068,7 +3141,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
     if (instr->needs_write_barrier()) {
       Register temp = ToRegister(instr->TempAt(0));
       // Update the write barrier for the object for in-object properties.
-      __ RecordWrite(object, offset, value, temp);
+      __ RecordWriteField(object, offset, value, temp, kSaveFPRegs);
     }
   } else {
     Register temp = ToRegister(instr->TempAt(0));
@@ -3077,7 +3150,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
     if (instr->needs_write_barrier()) {
       // Update the write barrier for the properties array.
       // object is used as a scratch register.
-      __ RecordWrite(temp, offset, value, object);
+      __ RecordWriteField(temp, offset, value, object, kSaveFPRegs);
     }
   }
 }
@@ -3136,6 +3209,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
         break;
       case EXTERNAL_FLOAT_ELEMENTS:
       case EXTERNAL_DOUBLE_ELEMENTS:
+      case FAST_SMI_ONLY_ELEMENTS:
       case FAST_ELEMENTS:
       case FAST_DOUBLE_ELEMENTS:
       case DICTIONARY_ELEMENTS:
@@ -3174,7 +3248,7 @@ void LCodeGen::DoStoreKeyedFastElement(LStoreKeyedFastElement* instr) {
                         key,
                         times_pointer_size,
                         FixedArray::kHeaderSize));
-    __ RecordWrite(elements, key, value);
+    __ RecordWrite(elements, key, value, kSaveFPRegs);
   }
 }
 
@@ -4194,10 +4268,12 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     final_branch_condition = not_zero;
 
   } else if (type_name->Equals(heap()->function_symbol())) {
-    STATIC_ASSERT(LAST_TYPE == LAST_CALLABLE_SPEC_OBJECT_TYPE);
+    STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
     __ JumpIfSmi(input, false_label);
-    __ CmpObjectType(input, FIRST_CALLABLE_SPEC_OBJECT_TYPE, input);
-    final_branch_condition = above_equal;
+    __ CmpObjectType(input, JS_FUNCTION_TYPE, input);
+    __ j(equal, true_label);
+    __ CmpInstanceType(input, JS_FUNCTION_PROXY_TYPE);
+    final_branch_condition = equal;
 
   } else if (type_name->Equals(heap()->object_symbol())) {
     __ JumpIfSmi(input, false_label);

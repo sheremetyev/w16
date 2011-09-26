@@ -28,7 +28,10 @@
 // Flags: --allow-natives-syntax
 // Test element kind of objects
 
+support_smi_only_arrays = %HasFastSmiOnlyElements([]);
+
 var element_kind = {
+  fast_smi_only_elements            :  0,
   fast_elements                     :  1,
   fast_double_elements              :  2,
   dictionary_elements               :  3,
@@ -44,9 +47,17 @@ var element_kind = {
 }
 
 // We expect an object to only be of one element kind.
-function assertKind(expected, obj){
-  assertEquals(expected == element_kind.fast_elements,
-               %HasFastElements(obj));
+function assertKind(expected, obj) {
+  if (support_smi_only_arrays) {
+    assertEquals(expected == element_kind.fast_smi_only_elements,
+                 %HasFastSmiOnlyElements(obj));
+    assertEquals(expected == element_kind.fast_elements,
+                 %HasFastElements(obj));
+  } else {
+    assertEquals(expected == element_kind.fast_elements ||
+                 expected == element_kind.fast_smi_only_elements,
+                 %HasFastElements(obj));
+  }
   assertEquals(expected == element_kind.fast_double_elements,
                %HasFastDoubleElements(obj));
   assertEquals(expected == element_kind.dictionary_elements,
@@ -80,16 +91,30 @@ me.dance = 0xD15C0;
 me.drink = 0xC0C0A;
 assertKind(element_kind.fast_elements, me);
 
+var too = [1,2,3];
+assertKind(element_kind.fast_smi_only_elements, too);
+too.dance = 0xD15C0;
+too.drink = 0xC0C0A;
+assertKind(element_kind.fast_smi_only_elements, too);
+
+// Make sure the element kind transitions from smionly when a non-smi is stored.
 var you = new Array();
-for(i = 0; i < 1337; i++) {
-  you[i] = i;
+assertKind(element_kind.fast_smi_only_elements, you);
+for (var i = 0; i < 1337; i++) {
+  var val = i;
+  if (i == 1336) {
+    assertKind(element_kind.fast_smi_only_elements, you);
+    val = new Object();
+  }
+  you[i] = val;
 }
 assertKind(element_kind.fast_elements, you);
 
-assertKind(element_kind.dictionary_elements, new Array(0xC0C0A));
+assertKind(element_kind.dictionary_elements, new Array(0xDECAF));
 
-// fast_double_elements not yet available
-
+var fast_double_array = new Array(0xDECAF);
+for (var i = 0; i < 0xDECAF; i++) fast_double_array[i] = i / 2;
+assertKind(element_kind.fast_double_elements, fast_double_array);
 
 assertKind(element_kind.external_byte_elements,           new Int8Array(9001));
 assertKind(element_kind.external_unsigned_byte_elements,  new Uint8Array(007));

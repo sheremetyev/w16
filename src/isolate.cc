@@ -87,7 +87,7 @@ ThreadLocalTop::ThreadLocalTop()
       descriptor_lookup_cache_(NULL),
       handle_scope_implementer_(NULL),
       unicode_cache_(NULL),
-      pc_to_code_cache_(NULL),
+      inner_pointer_to_code_cache_(NULL),
       write_input_buffer_(NULL),
       global_handles_(NULL),
       string_tracker_(NULL),
@@ -151,8 +151,8 @@ ThreadLocalTop::~ThreadLocalTop() {
   delete compilation_cache_;
   compilation_cache_ = NULL;
 
-  delete pc_to_code_cache_;
-  pc_to_code_cache_ = NULL;
+  delete inner_pointer_to_code_cache_;
+  inner_pointer_to_code_cache_ = NULL;
   delete write_input_buffer_;
   write_input_buffer_ = NULL;
 
@@ -213,7 +213,7 @@ void ThreadLocalTop::Initialize(Isolate* isolate) {
   context_slot_cache_ = new ContextSlotCache();
   descriptor_lookup_cache_ = new DescriptorLookupCache();
   unicode_cache_ = new UnicodeCache();
-  pc_to_code_cache_ = new PcToCodeCache(isolate_);
+  inner_pointer_to_code_cache_ = new InnerPointerToCodeCache(isolate_);
   write_input_buffer_ = new StringInputBuffer();
   global_handles_ = new GlobalHandles(isolate_);
   handle_scope_implementer_ = new HandleScopeImplementer(isolate_);

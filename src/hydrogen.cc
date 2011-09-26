@@ -422,7 +422,7 @@ class ReachabilityAnalyzer BASE_EMBEDDED {
 };
 
 
-void HGraph::Verify() const {
+void HGraph::Verify(bool do_full_verify) const {
   for (int i = 0; i < blocks_.length(); i++) {
     HBasicBlock* block = blocks_.at(i);
 
@@ -473,25 +473,27 @@ void HGraph::Verify() const {
   // Check special property of first block to have no predecessors.
   ASSERT(blocks_.at(0)->predecessors()->is_empty());
 
-  // Check that the graph is fully connected.
-  ReachabilityAnalyzer analyzer(entry_block_, blocks_.length(), NULL);
-  ASSERT(analyzer.visited_count() == blocks_.length());
+  if (do_full_verify) {
+    // Check that the graph is fully connected.
+    ReachabilityAnalyzer analyzer(entry_block_, blocks_.length(), NULL);
+    ASSERT(analyzer.visited_count() == blocks_.length());
 
-  // Check that entry block dominator is NULL.
-  ASSERT(entry_block_->dominator() == NULL);
+    // Check that entry block dominator is NULL.
+    ASSERT(entry_block_->dominator() == NULL);
 
-  // Check dominators.
-  for (int i = 0; i < blocks_.length(); ++i) {
-    HBasicBlock* block = blocks_.at(i);
-    if (block->dominator() == NULL) {
-      // Only start block may have no dominator assigned to.
-      ASSERT(i == 0);
-    } else {
-      // Assert that block is unreachable if dominator must not be visited.
-      ReachabilityAnalyzer dominator_analyzer(entry_block_,
-                                              blocks_.length(),
-                                              block->dominator());
-      ASSERT(!dominator_analyzer.reachable()->Contains(block->block_id()));
+    // Check dominators.
+    for (int i = 0; i < blocks_.length(); ++i) {
+      HBasicBlock* block = blocks_.at(i);
+      if (block->dominator() == NULL) {
+        // Only start block may have no dominator assigned to.
+        ASSERT(i == 0);
+      } else {
+        // Assert that block is unreachable if dominator must not be visited.
+        ReachabilityAnalyzer dominator_analyzer(entry_block_,
+                                                blocks_.length(),
+                                                block->dominator());
+        ASSERT(!dominator_analyzer.reachable()->Contains(block->block_id()));
+      }
     }
   }
 }
@@ -850,7 +852,7 @@ void HGraph::EliminateUnreachablePhis() {
 }
 
 
-bool HGraph::CheckPhis() {
+bool HGraph::CheckArgumentsPhiUses() {
   int block_count = blocks_.length();
   for (int i = 0; i < block_count; ++i) {
     for (int j = 0; j < blocks_[i]->phis()->length(); ++j) {
@@ -863,13 +865,11 @@ bool HGraph::CheckPhis() {
 }
 
 
-bool HGraph::CollectPhis() {
+bool HGraph::CheckConstPhiUses() {
   int block_count = blocks_.length();
-  phi_list_ = new ZoneList<HPhi*>(block_count);
   for (int i = 0; i < block_count; ++i) {
     for (int j = 0; j < blocks_[i]->phis()->length(); ++j) {
       HPhi* phi = blocks_[i]->phis()->at(j);
-      phi_list_->Add(phi);
       // Check for the hole value (from an uninitialized const).
       for (int k = 0; k < phi->OperandCount(); k++) {
         if (phi->OperandAt(k) == GetConstantHole()) return false;
@@ -877,6 +877,18 @@ bool HGraph::CollectPhis() {
     }
   }
   return true;
+}
+
+
+void HGraph::CollectPhis() {
+  int block_count = blocks_.length();
+  phi_list_ = new ZoneList<HPhi*>(block_count);
+  for (int i = 0; i < block_count; ++i) {
+    for (int j = 0; j < blocks_[i]->phis()->length(); ++j) {
+      HPhi* phi = blocks_[i]->phis()->at(j);
+      phi_list_->Add(phi);
+    }
+  }
 }
 
 
@@ -2320,17 +2332,24 @@ HGraph* HGraphBuilder::CreateGraph() {
 
   graph()->OrderBlocks();
   graph()->AssignDominators();
+
+#ifdef DEBUG
+  // Do a full verify after building the graph and computing dominators.
+  graph()->Verify(true);
+#endif
+
   graph()->PropagateDeoptimizingMark();
+  if (!graph()->CheckConstPhiUses()) {
+    Bailout("Unsupported phi use of const variable");
+    return NULL;
+  }
   graph()->EliminateRedundantPhis();
-  if (!graph()->CheckPhis()) {
-    Bailout("Unsupported phi use of arguments object");
+  if (!graph()->CheckArgumentsPhiUses()) {
+    Bailout("Unsupported phi use of arguments");
     return NULL;
   }
   if (FLAG_eliminate_dead_phis) graph()->EliminateUnreachablePhis();
-  if (!graph()->CollectPhis()) {
-    Bailout("Unsupported phi use of uninitialized constant");
-    return NULL;
-  }
+  graph()->CollectPhis();
 
   HInferRepresentation rep(graph());
   rep.Analyze();
@@ -3127,6 +3146,16 @@ void HGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
   }
   switch (variable->location()) {
     case Variable::UNALLOCATED: {
+      // Handle known global constants like 'undefined' specially to avoid a
+      // load from a global cell for them.
+      Handle<Object> constant_value =
+          isolate()->factory()->GlobalConstantFor(variable->name());
+      if (!constant_value.is_null()) {
+        HConstant* instr =
+            new(zone()) HConstant(constant_value, Representation::Tagged());
+        return ast_context()->ReturnInstruction(instr, expr->id());
+      }
+
       LookupResult lookup;
       GlobalPropertyAccess type =
           LookupGlobalProperty(variable, &lookup, false);
@@ -3317,7 +3346,12 @@ void HGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
     HValue* key = AddInstruction(
         new(zone()) HConstant(Handle<Object>(Smi::FromInt(i)),
                               Representation::Integer32()));
-    AddInstruction(new(zone()) HStoreKeyedFastElement(elements, key, value));
+    if (FLAG_smi_only_arrays) {
+      AddInstruction(BuildStoreKeyedGeneric(literal, key, value));
+    } else {
+      AddInstruction(new(zone()) HStoreKeyedFastElement(elements, key, value));
+    }
+
     AddSimulate(expr->GetIdForElement(i));
   }
   return ast_context()->ReturnValue(Pop());
@@ -3928,6 +3962,7 @@ HInstruction* HGraphBuilder::BuildExternalArrayElementAccess(
       case EXTERNAL_FLOAT_ELEMENTS:
       case EXTERNAL_DOUBLE_ELEMENTS:
         break;
+      case FAST_SMI_ONLY_ELEMENTS:
       case FAST_ELEMENTS:
       case FAST_DOUBLE_ELEMENTS:
       case DICTIONARY_ELEMENTS:
@@ -4039,14 +4074,20 @@ HValue* HGraphBuilder::HandlePolymorphicElementAccess(HValue* object,
   HLoadExternalArrayPointer* external_elements = NULL;
   HInstruction* checked_key = NULL;
 
-  // FAST_ELEMENTS is assumed to be the first case.
-  STATIC_ASSERT(FAST_ELEMENTS == 0);
+  // Generated code assumes that FAST_SMI_ONLY_ELEMENTS, FAST_ELEMENTS,
+  // FAST_DOUBLE_ELEMENTS and DICTIONARY_ELEMENTS are handled before external
+  // arrays.
+  STATIC_ASSERT(FAST_SMI_ONLY_ELEMENTS < FIRST_EXTERNAL_ARRAY_ELEMENTS_KIND);
+  STATIC_ASSERT(FAST_ELEMENTS < FIRST_EXTERNAL_ARRAY_ELEMENTS_KIND);
+  STATIC_ASSERT(FAST_DOUBLE_ELEMENTS < FIRST_EXTERNAL_ARRAY_ELEMENTS_KIND);
+  STATIC_ASSERT(DICTIONARY_ELEMENTS < FIRST_EXTERNAL_ARRAY_ELEMENTS_KIND);
 
-  for (ElementsKind elements_kind = FAST_ELEMENTS;
+  for (ElementsKind elements_kind = FIRST_ELEMENTS_KIND;
        elements_kind <= LAST_ELEMENTS_KIND;
        elements_kind = ElementsKind(elements_kind + 1)) {
-    // After having handled FAST_ELEMENTS and DICTIONARY_ELEMENTS, we
-    // need to add some code that's executed for all external array cases.
+    // After having handled FAST_ELEMENTS, FAST_SMI_ELEMENTS,
+    // FAST_DOUBLE_ELEMENTS and DICTIONARY_ELEMENTS, we need to add some code
+    // that's executed for all external array cases.
     STATIC_ASSERT(LAST_EXTERNAL_ARRAY_ELEMENTS_KIND ==
                   LAST_ELEMENTS_KIND);
     if (elements_kind == FIRST_EXTERNAL_ARRAY_ELEMENTS_KIND
@@ -4068,11 +4109,12 @@ HValue* HGraphBuilder::HandlePolymorphicElementAccess(HValue* object,
 
       set_current_block(if_true);
       HInstruction* access;
-      if (elements_kind == FAST_ELEMENTS ||
+      if (elements_kind == FAST_SMI_ONLY_ELEMENTS ||
+          elements_kind == FAST_ELEMENTS ||
           elements_kind == FAST_DOUBLE_ELEMENTS) {
         bool fast_double_elements =
             elements_kind == FAST_DOUBLE_ELEMENTS;
-        if (is_store && elements_kind == FAST_ELEMENTS) {
+        if (is_store && !fast_double_elements) {
           AddInstruction(new(zone()) HCheckMap(
               elements, isolate()->factory()->fixed_array_map(),
               elements_kind_branch));
@@ -4086,29 +4128,40 @@ HValue* HGraphBuilder::HandlePolymorphicElementAccess(HValue* object,
         current_block()->Finish(typecheck);
 
         set_current_block(if_jsarray);
-        HInstruction* length = new(zone()) HJSArrayLength(object, typecheck);
-        AddInstruction(length);
-        checked_key = AddInstruction(new(zone()) HBoundsCheck(key, length));
-        if (is_store) {
-          if (fast_double_elements) {
-            access = AddInstruction(
-                new(zone()) HStoreKeyedFastDoubleElement(elements,
-                                                         checked_key,
-                                                         val));
-          } else {
-            access = AddInstruction(
-                new(zone()) HStoreKeyedFastElement(elements, checked_key, val));
-          }
+        HInstruction* length;
+        if (is_store && elements_kind == FAST_SMI_ONLY_ELEMENTS) {
+          // For now, fall back to the generic stub for
+          // FAST_SMI_ONLY_ELEMENTS
+          access = AddInstruction(BuildStoreKeyedGeneric(object, key, val));
         } else {
-          if (fast_double_elements) {
-            access = AddInstruction(
-                new(zone()) HLoadKeyedFastDoubleElement(elements, checked_key));
+          length = new(zone()) HJSArrayLength(object, typecheck);
+          AddInstruction(length);
+          checked_key = AddInstruction(new(zone()) HBoundsCheck(key, length));
+          if (is_store) {
+            if (fast_double_elements) {
+              access = AddInstruction(
+                  new(zone()) HStoreKeyedFastDoubleElement(elements,
+                                                           checked_key,
+                                                           val));
+            } else {
+              access = AddInstruction(
+                  new(zone()) HStoreKeyedFastElement(elements,
+                                                     checked_key,
+                                                     val));
+            }
           } else {
-            access = AddInstruction(
-                new(zone()) HLoadKeyedFastElement(elements, checked_key));
+            if (fast_double_elements) {
+              access = AddInstruction(
+                  new(zone()) HLoadKeyedFastDoubleElement(elements,
+                                                          checked_key));
+            } else {
+              access = AddInstruction(
+                  new(zone()) HLoadKeyedFastElement(elements, checked_key));
+            }
+            Push(access);
           }
-          Push(access);
         }
+
         *has_side_effects |= access->HasSideEffects();
         if (position != -1) {
           access->set_position(position);
@@ -4487,7 +4540,7 @@ bool HGraphBuilder::TryInline(Call* expr) {
   HEnvironment* env = environment();
   int current_level = 1;
   while (env->outer() != NULL) {
-    if (current_level == Compiler::kMaxInliningLevels) {
+    if (FLAG_limit_inlining && current_level == Compiler::kMaxInliningLevels) {
       TraceInline(target, caller, "inline depth limit reached");
       return false;
     }
@@ -4923,7 +4976,6 @@ void HGraphBuilder::VisitCall(Call* expr) {
 
   } else {
     VariableProxy* proxy = expr->expression()->AsVariableProxy();
-    // FIXME.
     bool global_call = proxy != NULL && proxy->var()->IsUnallocated();
 
     if (global_call) {
@@ -5668,26 +5720,36 @@ Representation HGraphBuilder::ToRepresentation(TypeInfo info) {
 }
 
 
-void HGraphBuilder::HandleLiteralCompareTypeof(CompareOperation* compare_expr,
-                                               Expression* expr,
+void HGraphBuilder::HandleLiteralCompareTypeof(CompareOperation* expr,
+                                               Expression* sub_expr,
                                                Handle<String> check) {
-  CHECK_ALIVE(VisitForTypeOf(expr));
-  HValue* expr_value = Pop();
-  HTypeofIsAndBranch* instr = new(zone()) HTypeofIsAndBranch(expr_value, check);
-  instr->set_position(compare_expr->position());
-  return ast_context()->ReturnControl(instr, compare_expr->id());
+  CHECK_ALIVE(VisitForTypeOf(sub_expr));
+  HValue* value = Pop();
+  HTypeofIsAndBranch* instr = new(zone()) HTypeofIsAndBranch(value, check);
+  instr->set_position(expr->position());
+  return ast_context()->ReturnControl(instr, expr->id());
 }
 
 
-void HGraphBuilder::HandleLiteralCompareUndefined(
-    CompareOperation* compare_expr, Expression* expr) {
-  CHECK_ALIVE(VisitForValue(expr));
-  HValue* lhs = Pop();
-  HValue* rhs = graph()->GetConstantUndefined();
-  HCompareObjectEqAndBranch* instr =
-      new(zone()) HCompareObjectEqAndBranch(lhs, rhs);
-  instr->set_position(compare_expr->position());
-  return ast_context()->ReturnControl(instr, compare_expr->id());
+bool HGraphBuilder::TryLiteralCompare(CompareOperation* expr) {
+  Expression *sub_expr;
+  Handle<String> check;
+  if (expr->IsLiteralCompareTypeof(&sub_expr, &check)) {
+    HandleLiteralCompareTypeof(expr, sub_expr, check);
+    return true;
+  }
+
+  if (expr->IsLiteralCompareUndefined(&sub_expr)) {
+    HandleLiteralCompareNil(expr, sub_expr, kUndefinedValue);
+    return true;
+  }
+
+  if (expr->IsLiteralCompareNull(&sub_expr)) {
+    HandleLiteralCompareNil(expr, sub_expr, kNullValue);
+    return true;
+  }
+
+  return false;
 }
 
 
@@ -5709,22 +5771,7 @@ void HGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
   }
 
   // Check for special cases that compare against literals.
-  Expression *sub_expr;
-  Handle<String> check;
-  if (expr->IsLiteralCompareTypeof(&sub_expr, &check)) {
-    HandleLiteralCompareTypeof(expr, sub_expr, check);
-    return;
-  }
-
-  if (expr->IsLiteralCompareUndefined(&sub_expr)) {
-    HandleLiteralCompareUndefined(expr, sub_expr);
-    return;
-  }
-
-  if (expr->IsLiteralCompareNull(&sub_expr)) {
-    HandleLiteralCompareNull(expr, sub_expr);
-    return;
-  }
+  if (TryLiteralCompare(expr)) return;
 
   TypeInfo type_info = oracle()->CompareType(expr);
   // Check if this expression was ever executed according to type feedback.
@@ -5829,16 +5876,19 @@ void HGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
 }
 
 
-void HGraphBuilder::HandleLiteralCompareNull(CompareOperation* compare_expr,
-                                             Expression* expr) {
+void HGraphBuilder::HandleLiteralCompareNil(CompareOperation* expr,
+                                            Expression* sub_expr,
+                                            NilValue nil) {
   ASSERT(!HasStackOverflow());
   ASSERT(current_block() != NULL);
   ASSERT(current_block()->HasPredecessor());
-  CHECK_ALIVE(VisitForValue(expr));
+  CHECK_ALIVE(VisitForValue(sub_expr));
   HValue* value = Pop();
-  bool is_strict = compare_expr->op() == Token::EQ_STRICT;
-  HIsNullAndBranch* instr = new(zone()) HIsNullAndBranch(value, is_strict);
-  return ast_context()->ReturnControl(instr, compare_expr->id());
+  EqualityKind kind =
+      expr->op() == Token::EQ_STRICT ? kStrictEquality : kNonStrictEquality;
+  HIsNilAndBranch* instr = new(zone()) HIsNilAndBranch(value, kind, nil);
+  instr->set_position(expr->position());
+  return ast_context()->ReturnControl(instr, expr->id());
 }
 
 
@@ -5920,9 +5970,7 @@ void HGraphBuilder::GenerateIsFunction(CallRuntime* call) {
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* value = Pop();
   HHasInstanceTypeAndBranch* result =
-      new(zone()) HHasInstanceTypeAndBranch(value,
-                                            JS_FUNCTION_TYPE,
-                                            JS_FUNCTION_PROXY_TYPE);
+      new(zone()) HHasInstanceTypeAndBranch(value, JS_FUNCTION_TYPE);
   return ast_context()->ReturnControl(result, call->id());
 }
 
@@ -6822,7 +6870,7 @@ void HPhase::End() const {
   }
 
 #ifdef DEBUG
-  if (graph_ != NULL) graph_->Verify();
+  if (graph_ != NULL) graph_->Verify(false);  // No full verify.
   if (allocator_ != NULL) allocator_->Verify();
 #endif
 }

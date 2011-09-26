@@ -705,7 +705,8 @@ class KeyedStoreStubCompiler: public StubCompiler {
       CodeList* handler_ics);
 
   static void GenerateStoreFastElement(MacroAssembler* masm,
-                                       bool is_js_array);
+                                       bool is_js_array,
+                                       ElementsKind element_kind);
 
   static void GenerateStoreFastDoubleElement(MacroAssembler* masm,
                                              bool is_js_array);

@@ -3318,6 +3318,7 @@ void TranscendentalCacheStub::GenerateCallCFunction(MacroAssembler* masm,
   } else {
     __ mov_d(f12, f4);
   }
+  AllowExternalCallThatCantCauseGC scope(masm);
   switch (type_) {
     case TranscendentalCache::SIN:
       __ CallCFunction(
@@ -3473,6 +3474,24 @@ void MathPowStub::Generate(MacroAssembler* masm) {
 
 bool CEntryStub::NeedsImmovableCode() {
   return true;
+}
+
+
+bool CEntryStub::CompilingCallsToThisStubIsGCSafe() {
+  return (!save_doubles_ || ISOLATE->fp_stubs_generated()) &&
+          result_size_ == 1;
+}
+
+
+void CodeStub::GenerateStubsAheadOfTime() {
+}
+
+
+void CodeStub::GenerateFPStubs() {
+  CEntryStub save_doubles(1);
+  save_doubles.SaveDoubles();
+  Handle<Code> code = save_doubles.GetCode();
+  code->GetIsolate()->set_fp_stubs_generated(true);
 }
 
 
@@ -4702,8 +4721,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // For arguments 4 and 3 get string length, calculate start of string data
   // and calculate the shift of the index (0 for ASCII and 1 for two byte).
-  STATIC_ASSERT(SeqAsciiString::kHeaderSize == SeqTwoByteString::kHeaderSize);
-  __ Addu(t2, subject, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
+  __ Addu(t2, subject, Operand(SeqString::kHeaderSize - kHeapObjectTag));
   __ Xor(a3, a3, Operand(1));  // 1 for 2-byte str, 0 for 1-byte.
   // Load the length from the original subject string from the previous stack
   // frame. Therefore we have to use fp, which points exactly to two pointer
@@ -4937,7 +4955,7 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
 
 
 void CallFunctionStub::Generate(MacroAssembler* masm) {
-  Label slow;
+  Label slow, non_function;
 
   // The receiver might implicitly be the global object. This is
   // indicated by passing the hole as the receiver to the call
@@ -4963,7 +4981,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
 
   // Check that the function is really a JavaScript function.
   // a1: pushed function (to be verified)
-  __ JumpIfSmi(a1, &slow);
+  __ JumpIfSmi(a1, &non_function);
   // Get the map of the function object.
   __ GetObjectType(a1, a2, a2);
   __ Branch(&slow, ne, a2, Operand(JS_FUNCTION_TYPE));
@@ -4991,8 +5009,22 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
 
   // Slow-case: Non-function called.
   __ bind(&slow);
+  // Check for function proxy.
+  __ Branch(&non_function, ne, a2, Operand(JS_FUNCTION_PROXY_TYPE));
+  __ push(a1);  // Put proxy as additional argument.
+  __ li(a0, Operand(argc_ + 1, RelocInfo::NONE));
+  __ li(a2, Operand(0, RelocInfo::NONE));
+  __ GetBuiltinEntry(a3, Builtins::CALL_FUNCTION_PROXY);
+  __ SetCallKind(t1, CALL_AS_FUNCTION);
+  {
+    Handle<Code> adaptor =
+      masm->isolate()->builtins()->ArgumentsAdaptorTrampoline();
+    __ Jump(adaptor, RelocInfo::CODE_TARGET);
+  }
+
   // CALL_NON_FUNCTION expects the non-function callee as receiver (instead
   // of the original receiver from the call site).
+  __ bind(&non_function);
   __ sw(a1, MemOperand(sp, argc_ * kPointerSize));
   __ li(a0, Operand(argc_));  // Setup the number of arguments.
   __ mov(a2, zero_reg);

@@ -1614,8 +1614,8 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
       __ Addu(end_elements, elements, end_elements);
       const int kEndElementsOffset =
           FixedArray::kHeaderSize - kHeapObjectTag - argc * kPointerSize;
-      __ sw(t0, MemOperand(end_elements, kEndElementsOffset));
-      __ Addu(end_elements, end_elements, kPointerSize);
+      __ Addu(end_elements, end_elements, kEndElementsOffset);
+      __ sw(t0, MemOperand(end_elements));
 
       // Check for a smi.
       __ JumpIfNotSmi(t0, &with_write_barrier);
@@ -3471,6 +3471,7 @@ static bool IsElementTypeSigned(ElementsKind elements_kind) {
 
     case EXTERNAL_FLOAT_ELEMENTS:
     case EXTERNAL_DOUBLE_ELEMENTS:
+    case FAST_SMI_ELEMENTS:
     case FAST_ELEMENTS:
     case FAST_DOUBLE_ELEMENTS:
     case DICTIONARY_ELEMENTS:

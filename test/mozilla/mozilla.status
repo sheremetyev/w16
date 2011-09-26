@@ -69,9 +69,6 @@ js1_5/Array/regress-465980-02: SKIP
 ecma_3/Date/15.9.3.2-1: SKIP
 js1_2/function/Number: SKIP
 
-# Causes assert to be triggered: http://code.google.com/p/v8/issues/detail?id=1689
-js1_5/GC/regress-311497: SKIP
-
 ##################### SLOW TESTS #####################
 
 # This takes a long time to run (~100 seconds). It should only be run
@@ -229,7 +226,7 @@ ecma/String/15.5.4.12-4: FAIL_OK
 ecma/String/15.5.4.12-5: FAIL_OK
 
 # Creates a linked list of arrays until we run out of memory or timeout.
-js1_5/Regress/regress-312588: FAIL || TIMEOUT
+js1_5/Regress/regress-312588: SKIP
 
 
 # Runs out of memory because it compiles huge functions.

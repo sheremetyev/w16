@@ -118,7 +118,7 @@ class LChunkBuilder;
   V(InstanceOfKnownGlobal)                     \
   V(InvokeFunction)                            \
   V(IsConstructCallAndBranch)                  \
-  V(IsNullAndBranch)                           \
+  V(IsNilAndBranch)                            \
   V(IsObjectAndBranch)                         \
   V(IsSmiAndBranch)                            \
   V(IsUndetectableAndBranch)                   \
@@ -1978,6 +1978,8 @@ class HCheckInstanceType: public HUnaryOperation {
     return new HCheckInstanceType(value, IS_SYMBOL);
   }
 
+  virtual void PrintDataTo(StringStream* stream);
+
   virtual Representation RequiredInputRepresentation(int index) const {
     return Representation::Tagged();
   }
@@ -2007,6 +2009,8 @@ class HCheckInstanceType: public HUnaryOperation {
     IS_SYMBOL,
     LAST_INTERVAL_CHECK = IS_JS_ARRAY
   };
+
+  const char* GetCheckName();
 
   HCheckInstanceType(HValue* value, Check check)
       : HUnaryOperation(value), check_(check) {
@@ -2258,6 +2262,19 @@ class HConstant: public HTemplateInstruction<0> {
   Handle<Object> handle() const { return handle_; }
 
   bool InOldSpace() const { return !HEAP->InNewSpace(*handle_); }
+
+  bool ImmortalImmovable() const {
+    Heap* heap = HEAP;
+    if (*handle_ == heap->undefined_value()) return true;
+    if (*handle_ == heap->null_value()) return true;
+    if (*handle_ == heap->true_value()) return true;
+    if (*handle_ == heap->false_value()) return true;
+    if (*handle_ == heap->the_hole_value()) return true;
+    if (*handle_ == heap->minus_zero_value()) return true;
+    if (*handle_ == heap->nan_value()) return true;
+    if (*handle_ == heap->empty_string()) return true;
+    return false;
+  }
 
   virtual Representation RequiredInputRepresentation(int index) const {
     return Representation::None();
@@ -2610,6 +2627,8 @@ class HCompareObjectEqAndBranch: public HTemplateControlInstruction<2, 2> {
   HValue* left() { return OperandAt(0); }
   HValue* right() { return OperandAt(1); }
 
+  virtual void PrintDataTo(StringStream* stream);
+
   virtual Representation RequiredInputRepresentation(int index) const {
     return Representation::Tagged();
   }
@@ -2641,21 +2660,25 @@ class HCompareConstantEqAndBranch: public HUnaryControlInstruction {
 };
 
 
-class HIsNullAndBranch: public HUnaryControlInstruction {
+class HIsNilAndBranch: public HUnaryControlInstruction {
  public:
-  HIsNullAndBranch(HValue* value, bool is_strict)
-      : HUnaryControlInstruction(value, NULL, NULL), is_strict_(is_strict) { }
+  HIsNilAndBranch(HValue* value, EqualityKind kind, NilValue nil)
+      : HUnaryControlInstruction(value, NULL, NULL), kind_(kind), nil_(nil) { }
 
-  bool is_strict() const { return is_strict_; }
+  EqualityKind kind() const { return kind_; }
+  NilValue nil() const { return nil_; }
+
+  virtual void PrintDataTo(StringStream* stream);
 
   virtual Representation RequiredInputRepresentation(int index) const {
     return Representation::Tagged();
   }
 
-  DECLARE_CONCRETE_INSTRUCTION(IsNullAndBranch)
+  DECLARE_CONCRETE_INSTRUCTION(IsNilAndBranch)
 
  private:
-  bool is_strict_;
+  EqualityKind kind_;
+  NilValue nil_;
 };
 
 
@@ -3342,7 +3365,7 @@ class HLoadContextSlot: public HUnaryOperation {
 static inline bool StoringValueNeedsWriteBarrier(HValue* value) {
   return !value->type().IsBoolean()
       && !value->type().IsSmi()
-      && !(value->IsConstant() && HConstant::cast(value)->InOldSpace());
+      && !(value->IsConstant() && HConstant::cast(value)->ImmortalImmovable());
 }
 
 
@@ -4113,6 +4136,8 @@ class HTypeof: public HTemplateInstruction<2> {
 
   HValue* context() { return OperandAt(0); }
   HValue* value() { return OperandAt(1); }
+
+  virtual void PrintDataTo(StringStream* stream);
 
   virtual Representation RequiredInputRepresentation(int index) const {
     return Representation::Tagged();

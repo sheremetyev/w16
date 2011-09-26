@@ -790,7 +790,11 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
     // Update the write barrier for the array address.
     // Pass the value being stored in the now unused name_reg.
     __ mov(name_reg, Operand(eax));
-    __ RecordWrite(receiver_reg, offset, name_reg, scratch);
+    __ RecordWriteField(receiver_reg,
+                        offset,
+                        name_reg,
+                        scratch,
+                        kDontSaveFPRegs);
   } else {
     // Write to the properties array.
     int offset = index * kPointerSize + FixedArray::kHeaderSize;
@@ -801,7 +805,11 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
     // Update the write barrier for the array address.
     // Pass the value being stored in the now unused name_reg.
     __ mov(name_reg, Operand(eax));
-    __ RecordWrite(scratch, offset, name_reg, receiver_reg);
+    __ RecordWriteField(scratch,
+                        offset,
+                        name_reg,
+                        receiver_reg,
+                        kDontSaveFPRegs);
   }
 
   // Return the value (register eax).
@@ -1446,7 +1454,7 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
     __ j(not_equal, &call_builtin);
 
     if (argc == 1) {  // Otherwise fall through to call builtin.
-      Label exit, with_write_barrier, attempt_to_grow_elements;
+      Label attempt_to_grow_elements, with_write_barrier;
 
       // Get the array's length into eax and calculate new length.
       __ mov(eax, FieldOperand(edx, JSArray::kLengthOffset));
@@ -1461,6 +1469,10 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
       __ cmp(eax, Operand(ecx));
       __ j(greater, &attempt_to_grow_elements);
 
+      // Check if value is a smi.
+      __ mov(ecx, Operand(esp, argc * kPointerSize));
+      __ JumpIfNotSmi(ecx, &with_write_barrier);
+
       // Save new length.
       __ mov(FieldOperand(edx, JSArray::kLengthOffset), eax);
 
@@ -1468,26 +1480,50 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
       __ lea(edx, FieldOperand(ebx,
                                eax, times_half_pointer_size,
                                FixedArray::kHeaderSize - argc * kPointerSize));
-      __ mov(ecx, Operand(esp, argc * kPointerSize));
       __ mov(Operand(edx, 0), ecx);
 
-      // Check if value is a smi.
-      __ JumpIfNotSmi(ecx, &with_write_barrier);
-
-      __ bind(&exit);
       __ ret((argc + 1) * kPointerSize);
 
       __ bind(&with_write_barrier);
 
-      __ InNewSpace(ebx, ecx, equal, &exit);
+      if (FLAG_smi_only_arrays) {
+        __ mov(edi, FieldOperand(edx, HeapObject::kMapOffset));
+        __ CheckFastObjectElements(edi, &call_builtin);
+      }
 
-      __ RecordWriteHelper(ebx, edx, ecx);
+      // Save new length.
+      __ mov(FieldOperand(edx, JSArray::kLengthOffset), eax);
+
+      // Push the element.
+      __ lea(edx, FieldOperand(ebx,
+                               eax, times_half_pointer_size,
+                               FixedArray::kHeaderSize - argc * kPointerSize));
+      __ mov(Operand(edx, 0), ecx);
+
+      __ RecordWrite(
+          ebx, edx, ecx, kDontSaveFPRegs, EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
+
       __ ret((argc + 1) * kPointerSize);
 
       __ bind(&attempt_to_grow_elements);
       if (!FLAG_inline_new) {
         __ jmp(&call_builtin);
       }
+
+      __ mov(edi, Operand(esp, argc * kPointerSize));
+      if (FLAG_smi_only_arrays) {
+        // Growing elements that are SMI-only requires special handling in case
+        // the new element is non-Smi. For now, delegate to the builtin.
+        Label no_fast_elements_check;
+        __ JumpIfSmi(edi, &no_fast_elements_check);
+        __ mov(esi, FieldOperand(edx, HeapObject::kMapOffset));
+        __ CheckFastObjectElements(esi, &call_builtin, Label::kFar);
+        __ bind(&no_fast_elements_check);
+      }
+
+      // We could be lucky and the elements array could be at the top of
+      // new-space.  In this case we can just grow it in place by moving the
+      // allocation pointer up.
 
       ExternalReference new_space_allocation_top =
           ExternalReference::new_space_allocation_top_address(isolate());
@@ -1510,15 +1546,21 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
 
       // We fit and could grow elements.
       __ mov(Operand::StaticVariable(new_space_allocation_top), ecx);
-      __ mov(ecx, Operand(esp, argc * kPointerSize));
 
       // Push the argument...
-      __ mov(Operand(edx, 0), ecx);
+      __ mov(Operand(edx, 0), edi);
       // ... and fill the rest with holes.
       for (int i = 1; i < kAllocationDelta; i++) {
         __ mov(Operand(edx, i * kPointerSize),
                Immediate(factory()->the_hole_value()));
       }
+
+      // We know the elements array is in new space so we don't need the
+      // remembered set, but we just pushed a value onto it so we may have to
+      // tell the incremental marker to rescan the object that we just grew.  We
+      // don't need to worry about the holes because they are in old space and
+      // already marked black.
+      __ RecordWrite(ebx, edx, edi, kDontSaveFPRegs, OMIT_REMEMBERED_SET);
 
       // Restore receiver to edx as finish sequence assumes it's here.
       __ mov(edx, Operand(esp, (argc + 1) * kPointerSize));
@@ -1526,9 +1568,13 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
       // Increment element's and array's sizes.
       __ add(FieldOperand(ebx, FixedArray::kLengthOffset),
              Immediate(Smi::FromInt(kAllocationDelta)));
+
+      // NOTE: This only happen in new-space, where we don't
+      // care about the black-byte-count on pages. Otherwise we should
+      // update that too if the object is black.
+
       __ mov(FieldOperand(edx, JSArray::kLengthOffset), eax);
 
-      // Elements are in new space, so write barrier is not required.
       __ ret((argc + 1) * kPointerSize);
     }
 
@@ -2604,13 +2650,9 @@ MaybeObject* StoreStubCompiler::CompileStoreGlobal(GlobalObject* object,
          Immediate(Handle<Map>(object->map())));
   __ j(not_equal, &miss);
 
-
   // Compute the cell operand to use.
-  Operand cell_operand = Operand::Cell(Handle<JSGlobalPropertyCell>(cell));
-  if (Serializer::enabled()) {
-    __ mov(ebx, Immediate(Handle<JSGlobalPropertyCell>(cell)));
-    cell_operand = FieldOperand(ebx, JSGlobalPropertyCell::kValueOffset);
-  }
+  __ mov(ebx, Immediate(Handle<JSGlobalPropertyCell>(cell)));
+  Operand cell_operand = FieldOperand(ebx, JSGlobalPropertyCell::kValueOffset);
 
   // Check that the value in the cell is not the hole. If it is, this
   // cell could have been deleted and reintroducing the global needs
@@ -2621,8 +2663,23 @@ MaybeObject* StoreStubCompiler::CompileStoreGlobal(GlobalObject* object,
 
   // Store the value in the cell.
   __ mov(cell_operand, eax);
+  Label done;
+  __ test(eax, Immediate(kSmiTagMask));
+  __ j(zero, &done);
+
+  __ mov(ecx, eax);
+  __ lea(edx, cell_operand);
+  // Cells are always in the remembered set.
+  __ RecordWrite(ebx,  // Object.
+                 edx,  // Address.
+                 ecx,  // Value.
+                 kDontSaveFPRegs,
+                 OMIT_REMEMBERED_SET,
+                 OMIT_SMI_CHECK);
 
   // Return the value (register eax).
+  __ bind(&done);
+
   Counters* counters = isolate()->counters();
   __ IncrementCounter(counters->named_store_global_inline(), 1);
   __ ret(0);
@@ -3843,8 +3900,10 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
 }
 
 
-void KeyedStoreStubCompiler::GenerateStoreFastElement(MacroAssembler* masm,
-                                                      bool is_js_array) {
+void KeyedStoreStubCompiler::GenerateStoreFastElement(
+    MacroAssembler* masm,
+    bool is_js_array,
+    ElementsKind elements_kind) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ecx    : key
@@ -3875,11 +3934,28 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(MacroAssembler* masm,
     __ j(above_equal, &miss_force_generic);
   }
 
-  // Do the store and update the write barrier. Make sure to preserve
-  // the value in register eax.
-  __ mov(edx, Operand(eax));
-  __ mov(FieldOperand(edi, ecx, times_2, FixedArray::kHeaderSize), eax);
-  __ RecordWrite(edi, 0, edx, ecx);
+  if (elements_kind == FAST_SMI_ONLY_ELEMENTS) {
+    __ JumpIfNotSmi(eax, &miss_force_generic);
+    // ecx is a smi, use times_half_pointer_size instead of
+    // times_pointer_size
+    __ mov(FieldOperand(edi,
+                        ecx,
+                        times_half_pointer_size,
+                        FixedArray::kHeaderSize), eax);
+  } else {
+    ASSERT(elements_kind == FAST_ELEMENTS);
+    // Do the store and update the write barrier.
+    // ecx is a smi, use times_half_pointer_size instead of
+    // times_pointer_size
+    __ lea(ecx, FieldOperand(edi,
+                             ecx,
+                             times_half_pointer_size,
+                             FixedArray::kHeaderSize));
+    __ mov(Operand(ecx, 0), eax);
+    // Make sure to preserve the value in register eax.
+    __ mov(edx, Operand(eax));
+    __ RecordWrite(edi, ecx, edx, kDontSaveFPRegs);
+  }
 
   // Done.
   __ ret(0);

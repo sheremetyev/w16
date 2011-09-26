@@ -116,7 +116,7 @@ void Deoptimizer::EnsureRelocSpaceForLazyDeoptimization(Handle<Code> code) {
         new_reloc->GetDataStartAddress() + padding, 0);
     intptr_t comment_string
         = reinterpret_cast<intptr_t>(RelocInfo::kFillerCommentString);
-    RelocInfo rinfo(0, RelocInfo::COMMENT, comment_string);
+    RelocInfo rinfo(0, RelocInfo::COMMENT, comment_string, NULL);
     for (int i = 0; i < additional_comments; ++i) {
 #ifdef DEBUG
       byte* pos_before = reloc_info_writer.pos();
@@ -174,7 +174,8 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
       // We use RUNTIME_ENTRY for deoptimization bailouts.
       RelocInfo rinfo(curr_address + 1,  // 1 after the call opcode.
                       RelocInfo::RUNTIME_ENTRY,
-                      reinterpret_cast<intptr_t>(deopt_entry));
+                      reinterpret_cast<intptr_t>(deopt_entry),
+                      NULL);
       reloc_info_writer.Write(&rinfo);
       ASSERT_GE(reloc_info_writer.pos(),
                 reloc_info->address() + ByteArray::kHeaderSize);
@@ -205,6 +206,11 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
   node->set_next(data->deoptimizing_code_list_);
   data->deoptimizing_code_list_ = node;
 
+  // We might be in the middle of incremental marking with compaction.
+  // Tell collector to treat this code object in a special way and
+  // ignore all slots that might have been recorded on it.
+  isolate->heap()->mark_compact_collector()->InvalidateCode(code);
+
   // Set the code for the function to non-optimized version.
   function->ReplaceCode(function->shared()->code());
 
@@ -221,7 +227,8 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
 }
 
 
-void Deoptimizer::PatchStackCheckCodeAt(Address pc_after,
+void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
+                                        Address pc_after,
                                         Code* check_code,
                                         Code* replacement_code) {
   Address call_target_address = pc_after - kIntSize;
@@ -250,6 +257,13 @@ void Deoptimizer::PatchStackCheckCodeAt(Address pc_after,
   *(call_target_address - 2) = 0x90;  // nop
   Assembler::set_target_address_at(call_target_address,
                                    replacement_code->entry());
+
+  RelocInfo rinfo(call_target_address,
+                  RelocInfo::CODE_TARGET,
+                  0,
+                  unoptimized_code);
+  unoptimized_code->GetHeap()->incremental_marking()->RecordWriteIntoCode(
+      unoptimized_code, &rinfo, replacement_code);
 }
 
 
@@ -268,6 +282,9 @@ void Deoptimizer::RevertStackCheckCodeAt(Address pc_after,
   *(call_target_address - 2) = 0x07;  // offset
   Assembler::set_target_address_at(call_target_address,
                                    check_code->entry());
+
+  check_code->GetHeap()->incremental_marking()->
+      RecordCodeTargetPatch(call_target_address, check_code);
 }
 
 
@@ -415,7 +432,14 @@ void Deoptimizer::DoComputeOsrOutputFrame() {
     output_[0]->SetPc(reinterpret_cast<uint32_t>(from_));
   } else {
     // Setup the frame pointer and the context pointer.
-    output_[0]->SetRegister(ebp.code(), input_->GetRegister(ebp.code()));
+    // All OSR stack frames are dynamically aligned to an 8-byte boundary.
+    int frame_pointer = input_->GetRegister(ebp.code());
+    if ((frame_pointer & 0x4) == 0) {
+      // Return address at FP + 4 should be aligned, so FP mod 8 should be 4.
+      frame_pointer -= kPointerSize;
+      has_alignment_padding_ = 1;
+    }
+    output_[0]->SetRegister(ebp.code(), frame_pointer);
     output_[0]->SetRegister(esi.code(), input_->GetRegister(esi.code()));
 
     unsigned pc_offset = data->OsrPcOffset()->value();
@@ -480,9 +504,11 @@ void Deoptimizer::DoComputeFrame(TranslationIterator* iterator,
   // top address and the current frame's size.
   uint32_t top_address;
   if (is_bottommost) {
-    // 2 = context and function in the frame.
-    top_address =
-        input_->GetRegister(ebp.code()) - (2 * kPointerSize) - height_in_bytes;
+    // If the optimized frame had alignment padding, adjust the frame pointer
+    // to point to the new position of the old frame pointer after padding
+    // is removed. Subtract 2 * kPointerSize for the context and function slots.
+    top_address = input_->GetRegister(ebp.code()) - (2 * kPointerSize) -
+        height_in_bytes + has_alignment_padding_ * kPointerSize;
   } else {
     top_address = output_[frame_index - 1]->GetTop() - output_frame_size;
   }
@@ -533,7 +559,9 @@ void Deoptimizer::DoComputeFrame(TranslationIterator* iterator,
   }
   output_frame->SetFrameSlot(output_offset, value);
   intptr_t fp_value = top_address + output_offset;
-  ASSERT(!is_bottommost || input_->GetRegister(ebp.code()) == fp_value);
+  ASSERT(!is_bottommost ||
+      input_->GetRegister(ebp.code()) + has_alignment_padding_ * kPointerSize
+      == fp_value);
   output_frame->SetFp(fp_value);
   if (is_topmost) output_frame->SetRegister(ebp.code(), fp_value);
   if (FLAG_trace_deopt) {
@@ -722,6 +750,17 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ cmp(ecx, Operand(esp));
   __ j(not_equal, &pop_loop);
 
+  // If frame was dynamically aligned, pop padding.
+  Label sentinel, sentinel_done;
+  __ pop(Operand(ecx));
+  __ cmp(ecx, Operand(eax, Deoptimizer::frame_alignment_marker_offset()));
+  __ j(equal, &sentinel);
+  __ push(Operand(ecx));
+  __ jmp(&sentinel_done);
+  __ bind(&sentinel);
+  __ mov(Operand(eax, Deoptimizer::has_alignment_padding_offset()),
+         Immediate(1));
+  __ bind(&sentinel_done);
   // Compute the output frame in the deoptimizer.
   __ push(eax);
   __ PrepareCallCFunction(1, ebx);
@@ -732,6 +771,17 @@ void Deoptimizer::EntryGenerator::Generate() {
         ExternalReference::compute_output_frames_function(isolate), 1);
   }
   __ pop(eax);
+
+  if (type() == OSR) {
+    // If alignment padding is added, push the sentinel.
+    Label no_osr_padding;
+    __ cmp(Operand(eax, Deoptimizer::has_alignment_padding_offset()),
+           Immediate(0));
+    __ j(equal, &no_osr_padding, Label::kNear);
+    __ push(Operand(eax, Deoptimizer::frame_alignment_marker_offset()));
+    __ bind(&no_osr_padding);
+  }
+
 
   // Replace the current frame with the output frames.
   Label outer_push_loop, inner_push_loop;

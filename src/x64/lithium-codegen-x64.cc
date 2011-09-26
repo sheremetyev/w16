@@ -84,7 +84,7 @@ bool LCodeGen::GenerateCode() {
 
   // Open a frame scope to indicate that there is a frame on the stack.  The
   // MANUAL indicates that the scope shouldn't actually generate code to set up
-  // the frame (that is done in GeneatePrologue).
+  // the frame (that is done in GeneratePrologue).
   FrameScope frame_scope(masm_, StackFrame::MANUAL);
 
   return GeneratePrologue() &&
@@ -223,11 +223,8 @@ bool LCodeGen::GeneratePrologue() {
         // Store it in the context.
         int context_offset = Context::SlotOffset(var->index());
         __ movq(Operand(rsi, context_offset), rax);
-        // Update the write barrier. This clobbers all involved
-        // registers, so we have use a third register to avoid
-        // clobbering rsi.
-        __ movq(rcx, rsi);
-        __ RecordWrite(rcx, context_offset, rax, rbx);
+        // Update the write barrier. This clobbers rax and rbx.
+        __ RecordWriteContextSlot(rsi, context_offset, rax, rbx, kSaveFPRegs);
       }
     }
     Comment(";;; End allocate local context");
@@ -673,7 +670,7 @@ void LCodeGen::RecordSafepoint(
     int deoptimization_index) {
   ASSERT(kind == expected_safepoint_kind_);
 
-  const ZoneList<LOperand*>* operands = pointers->operands();
+  const ZoneList<LOperand*>* operands = pointers->GetNormalizedOperands();
 
   Safepoint safepoint = safepoints_.DefineSafepoint(masm(),
       kind, arguments, deoptimization_index);
@@ -1583,30 +1580,33 @@ void LCodeGen::DoCmpConstantEqAndBranch(LCmpConstantEqAndBranch* instr) {
 }
 
 
-void LCodeGen::DoIsNullAndBranch(LIsNullAndBranch* instr) {
+void LCodeGen::DoIsNilAndBranch(LIsNilAndBranch* instr) {
   Register reg = ToRegister(instr->InputAt(0));
-
   int false_block = chunk_->LookupDestination(instr->false_block_id());
 
+  // If the expression is known to be untagged or a smi, then it's definitely
+  // not null, and it can't be a an undetectable object.
   if (instr->hydrogen()->representation().IsSpecialization() ||
       instr->hydrogen()->type().IsSmi()) {
-    // If the expression is known to untagged or smi, then it's definitely
-    // not null, and it can't be a an undetectable object.
-    // Jump directly to the false block.
     EmitGoto(false_block);
     return;
   }
 
   int true_block = chunk_->LookupDestination(instr->true_block_id());
-
-  __ CompareRoot(reg, Heap::kNullValueRootIndex);
-  if (instr->is_strict()) {
+  Heap::RootListIndex nil_value = instr->nil() == kNullValue ?
+      Heap::kNullValueRootIndex :
+      Heap::kUndefinedValueRootIndex;
+  __ CompareRoot(reg, nil_value);
+  if (instr->kind() == kStrictEquality) {
     EmitBranch(true_block, false_block, equal);
   } else {
+    Heap::RootListIndex other_nil_value = instr->nil() == kNullValue ?
+        Heap::kUndefinedValueRootIndex :
+        Heap::kNullValueRootIndex;
     Label* true_label = chunk_->GetAssemblyLabel(true_block);
     Label* false_label = chunk_->GetAssemblyLabel(false_block);
     __ j(equal, true_label);
-    __ CompareRoot(reg, Heap::kUndefinedValueRootIndex);
+    __ CompareRoot(reg, other_nil_value);
     __ j(equal, true_label);
     __ JumpIfSmi(reg, false_label);
     // Check for undetectable objects by looking in the bit field in
@@ -1758,29 +1758,39 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
                                Label* is_false,
                                Handle<String> class_name,
                                Register input,
-                               Register temp) {
+                               Register temp,
+                               Register scratch) {
   __ JumpIfSmi(input, is_false);
-  __ CmpObjectType(input, FIRST_SPEC_OBJECT_TYPE, temp);
-  __ j(below, is_false);
 
-  // Map is now in temp.
-  // Functions have class 'Function'.
-  __ CmpInstanceType(temp, FIRST_CALLABLE_SPEC_OBJECT_TYPE);
   if (class_name->IsEqualTo(CStrVector("Function"))) {
-    __ j(above_equal, is_true);
+    // Assuming the following assertions, we can use the same compares to test
+    // for both being a function type and being in the object type range.
+    STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
+    STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
+                  FIRST_SPEC_OBJECT_TYPE + 1);
+    STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
+                  LAST_SPEC_OBJECT_TYPE - 1);
+    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
+    __ CmpObjectType(input, FIRST_SPEC_OBJECT_TYPE, temp);
+    __ j(below, is_false);
+    __ j(equal, is_true);
+    __ CmpInstanceType(temp, LAST_SPEC_OBJECT_TYPE);
+    __ j(equal, is_true);
   } else {
-    __ j(above_equal, is_false);
+    // Faster code path to avoid two compares: subtract lower bound from the
+    // actual type and do a signed compare with the width of the type range.
+    __ movq(temp, FieldOperand(input, HeapObject::kMapOffset));
+    __ movq(scratch, FieldOperand(temp, Map::kInstanceTypeOffset));
+    __ subb(scratch, Immediate(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
+    __ cmpb(scratch,
+            Immediate(static_cast<int8_t>(LAST_NONCALLABLE_SPEC_OBJECT_TYPE -
+                                          FIRST_NONCALLABLE_SPEC_OBJECT_TYPE)));
+    __ j(above, is_false);
   }
 
+  // Now we are in the FIRST-LAST_NONCALLABLE_SPEC_OBJECT_TYPE range.
   // Check if the constructor in the map is a function.
   __ movq(temp, FieldOperand(temp, Map::kConstructorOffset));
-
-  // As long as LAST_CALLABLE_SPEC_OBJECT_TYPE is the last type and
-  // FIRST_CALLABLE_SPEC_OBJECT_TYPE comes right after
-  // LAST_NONCALLABLE_SPEC_OBJECT_TYPE, we can avoid checking for the latter.
-  STATIC_ASSERT(LAST_TYPE == LAST_CALLABLE_SPEC_OBJECT_TYPE);
-  STATIC_ASSERT(FIRST_CALLABLE_SPEC_OBJECT_TYPE ==
-                LAST_NONCALLABLE_SPEC_OBJECT_TYPE + 1);
 
   // Objects with a non-function constructor have class 'Object'.
   __ CmpObjectType(temp, JS_FUNCTION_TYPE, kScratchRegister);
@@ -1810,6 +1820,7 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
 void LCodeGen::DoClassOfTestAndBranch(LClassOfTestAndBranch* instr) {
   Register input = ToRegister(instr->InputAt(0));
   Register temp = ToRegister(instr->TempAt(0));
+  Register temp2 = ToRegister(instr->TempAt(1));
   Handle<String> class_name = instr->hydrogen()->class_name();
 
   int true_block = chunk_->LookupDestination(instr->true_block_id());
@@ -1818,7 +1829,7 @@ void LCodeGen::DoClassOfTestAndBranch(LClassOfTestAndBranch* instr) {
   Label* true_label = chunk_->GetAssemblyLabel(true_block);
   Label* false_label = chunk_->GetAssemblyLabel(false_block);
 
-  EmitClassOfTest(true_label, false_label, class_name, input, temp);
+  EmitClassOfTest(true_label, false_label, class_name, input, temp, temp2);
 
   EmitBranch(true_block, false_block, equal);
 }
@@ -2022,25 +2033,39 @@ void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
 
 
 void LCodeGen::DoStoreGlobalCell(LStoreGlobalCell* instr) {
+  Register object = ToRegister(instr->TempAt(0));
+  Register address = ToRegister(instr->TempAt(1));
   Register value = ToRegister(instr->InputAt(0));
-  Register temp = ToRegister(instr->TempAt(0));
-  ASSERT(!value.is(temp));
-  bool check_hole = instr->hydrogen()->check_hole_value();
-  if (!check_hole && value.is(rax)) {
-    __ store_rax(instr->hydrogen()->cell().location(),
-                 RelocInfo::GLOBAL_PROPERTY_CELL);
-    return;
-  }
+  ASSERT(!value.is(object));
+  Handle<JSGlobalPropertyCell> cell_handle(instr->hydrogen()->cell());
+
+  __ movq(address, cell_handle, RelocInfo::GLOBAL_PROPERTY_CELL);
+
   // If the cell we are storing to contains the hole it could have
   // been deleted from the property dictionary. In that case, we need
   // to update the property details in the property dictionary to mark
   // it as no longer deleted. We deoptimize in that case.
-  __ movq(temp, instr->hydrogen()->cell(), RelocInfo::GLOBAL_PROPERTY_CELL);
-  if (check_hole) {
-    __ CompareRoot(Operand(temp, 0), Heap::kTheHoleValueRootIndex);
+  if (instr->hydrogen()->check_hole_value()) {
+    __ CompareRoot(Operand(address, 0), Heap::kTheHoleValueRootIndex);
     DeoptimizeIf(equal, instr->environment());
   }
-  __ movq(Operand(temp, 0), value);
+
+  // Store the value.
+  __ movq(Operand(address, 0), value);
+
+  Label smi_store;
+  __ JumpIfSmi(value, &smi_store, Label::kNear);
+
+  int offset = JSGlobalPropertyCell::kValueOffset - kHeapObjectTag;
+  __ lea(object, Operand(address, -offset));
+  // Cells are always in the remembered set.
+  __ RecordWrite(object,
+                 address,
+                 value,
+                 kSaveFPRegs,
+                 OMIT_REMEMBERED_SET,
+                 OMIT_SMI_CHECK);
+  __ bind(&smi_store);
 }
 
 
@@ -2070,7 +2095,7 @@ void LCodeGen::DoStoreContextSlot(LStoreContextSlot* instr) {
   if (instr->needs_write_barrier()) {
     int offset = Context::SlotOffset(instr->slot_index());
     Register scratch = ToRegister(instr->TempAt(0));
-    __ RecordWrite(context, offset, value, scratch);
+    __ RecordWriteContextSlot(context, offset, value, scratch, kSaveFPRegs);
   }
 }
 
@@ -2371,6 +2396,7 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
       case EXTERNAL_FLOAT_ELEMENTS:
       case EXTERNAL_DOUBLE_ELEMENTS:
       case FAST_ELEMENTS:
+      case FAST_SMI_ONLY_ELEMENTS:
       case FAST_DOUBLE_ELEMENTS:
       case DICTIONARY_ELEMENTS:
       case NON_STRICT_ARGUMENTS_ELEMENTS:
@@ -3039,7 +3065,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
     if (instr->needs_write_barrier()) {
       Register temp = ToRegister(instr->TempAt(0));
       // Update the write barrier for the object for in-object properties.
-      __ RecordWrite(object, offset, value, temp);
+      __ RecordWriteField(object, offset, value, temp, kSaveFPRegs);
     }
   } else {
     Register temp = ToRegister(instr->TempAt(0));
@@ -3048,7 +3074,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
     if (instr->needs_write_barrier()) {
       // Update the write barrier for the properties array.
       // object is used as a scratch register.
-      __ RecordWrite(temp, offset, value, object);
+      __ RecordWriteField(temp, offset, value, object, kSaveFPRegs);
     }
   }
 }
@@ -3096,6 +3122,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       case EXTERNAL_FLOAT_ELEMENTS:
       case EXTERNAL_DOUBLE_ELEMENTS:
       case FAST_ELEMENTS:
+      case FAST_SMI_ONLY_ELEMENTS:
       case FAST_DOUBLE_ELEMENTS:
       case DICTIONARY_ELEMENTS:
       case NON_STRICT_ARGUMENTS_ELEMENTS:
@@ -3152,7 +3179,7 @@ void LCodeGen::DoStoreKeyedFastElement(LStoreKeyedFastElement* instr) {
                              key,
                              times_pointer_size,
                              FixedArray::kHeaderSize));
-    __ RecordWrite(elements, key, value);
+    __ RecordWrite(elements, key, value, kSaveFPRegs);
   }
 }
 
@@ -3987,9 +4014,12 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     final_branch_condition = not_zero;
 
   } else if (type_name->Equals(heap()->function_symbol())) {
+    STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
     __ JumpIfSmi(input, false_label);
-    __ CmpObjectType(input, FIRST_CALLABLE_SPEC_OBJECT_TYPE, input);
-    final_branch_condition = above_equal;
+    __ CmpObjectType(input, JS_FUNCTION_TYPE, input);
+    __ j(equal, true_label);
+    __ CmpInstanceType(input, JS_FUNCTION_PROXY_TYPE);
+    final_branch_condition = equal;
 
   } else if (type_name->Equals(heap()->object_symbol())) {
     __ JumpIfSmi(input, false_label);

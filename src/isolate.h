@@ -67,7 +67,7 @@ class HandleScopeImplementer;
 class HeapProfiler;
 class InlineRuntimeFunctionsTable;
 class NoAllocationStringAllocator;
-class PcToCodeCache;
+class InnerPointerToCodeCache;
 class PreallocatedMemoryThread;
 class RegExpStack;
 class SaveContext;
@@ -469,7 +469,7 @@ class ThreadLocalTop {
   HandleScopeImplementer* handle_scope_implementer_;
   UnicodeCache* unicode_cache_;
   Zone zone_;
-  PcToCodeCache* pc_to_code_cache_;
+  InnerPointerToCodeCache* inner_pointer_to_code_cache_;
   StringInputBuffer* write_input_buffer_;
   GlobalHandles* global_handles_;
   RuntimeState runtime_state_;
@@ -930,7 +930,9 @@ class Isolate {
     return thread_local_top()->unicode_cache_;
   }
 
-  PcToCodeCache* pc_to_code_cache() { return thread_local_top()->pc_to_code_cache_; }
+  InnerPointerToCodeCache* inner_pointer_to_code_cache() {
+    return thread_local_top()->inner_pointer_to_code_cache_;
+  }
 
   StringInputBuffer* write_input_buffer() { return thread_local_top()->write_input_buffer_; }
 
@@ -959,6 +961,12 @@ class Isolate {
   }
 
   RuntimeState* runtime_state() { return &thread_local_top()->runtime_state_; }
+
+  void set_fp_stubs_generated(bool value) {
+    fp_stubs_generated_ = value;
+  }
+
+  bool fp_stubs_generated() { return fp_stubs_generated_; }
 
   StaticResource<SafeStringInputBuffer>* compiler_safe_string_input_buffer() {
     return &compiler_safe_string_input_buffer_;
@@ -1142,6 +1150,7 @@ class Isolate {
   PreallocatedStorage in_use_list_;
   PreallocatedStorage free_list_;
   bool preallocated_storage_preallocated_;
+  bool fp_stubs_generated_;
   StaticResource<SafeStringInputBuffer> compiler_safe_string_input_buffer_;
   Builtins builtins_;
   void* embedder_data_;

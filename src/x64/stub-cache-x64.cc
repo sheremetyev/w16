@@ -784,7 +784,8 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
     // Update the write barrier for the array address.
     // Pass the value being stored in the now unused name_reg.
     __ movq(name_reg, rax);
-    __ RecordWrite(receiver_reg, offset, name_reg, scratch);
+    __ RecordWriteField(
+        receiver_reg, offset, name_reg, scratch, kDontSaveFPRegs);
   } else {
     // Write to the properties array.
     int offset = index * kPointerSize + FixedArray::kHeaderSize;
@@ -795,7 +796,8 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
     // Update the write barrier for the array address.
     // Pass the value being stored in the now unused name_reg.
     __ movq(name_reg, rax);
-    __ RecordWrite(scratch, offset, name_reg, receiver_reg);
+    __ RecordWriteField(
+        scratch, offset, name_reg, receiver_reg, kDontSaveFPRegs);
   }
 
   // Return the value (register rax).
@@ -1426,7 +1428,7 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
     __ j(not_equal, &call_builtin);
 
     if (argc == 1) {  // Otherwise fall through to call builtin.
-      Label exit, with_write_barrier, attempt_to_grow_elements;
+      Label attempt_to_grow_elements, with_write_barrier;
 
       // Get the array's length into rax and calculate new length.
       __ SmiToInteger32(rax, FieldOperand(rdx, JSArray::kLengthOffset));
@@ -1440,35 +1442,58 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
       __ cmpl(rax, rcx);
       __ j(greater, &attempt_to_grow_elements);
 
+      // Check if value is a smi.
+      __ movq(rcx, Operand(rsp, argc * kPointerSize));
+      __ JumpIfNotSmi(rcx, &with_write_barrier);
+
       // Save new length.
       __ Integer32ToSmiField(FieldOperand(rdx, JSArray::kLengthOffset), rax);
 
       // Push the element.
-      __ movq(rcx, Operand(rsp, argc * kPointerSize));
       __ lea(rdx, FieldOperand(rbx,
                                rax, times_pointer_size,
                                FixedArray::kHeaderSize - argc * kPointerSize));
       __ movq(Operand(rdx, 0), rcx);
 
-      // Check if value is a smi.
       __ Integer32ToSmi(rax, rax);  // Return new length as smi.
-
-      __ JumpIfNotSmi(rcx, &with_write_barrier);
-
-      __ bind(&exit);
       __ ret((argc + 1) * kPointerSize);
 
       __ bind(&with_write_barrier);
 
-      __ InNewSpace(rbx, rcx, equal, &exit);
+      if (FLAG_smi_only_arrays) {
+        __ movq(rdi, FieldOperand(rdx, HeapObject::kMapOffset));
+        __ CheckFastObjectElements(rdi, &call_builtin);
+      }
 
-      __ RecordWriteHelper(rbx, rdx, rcx);
+      // Save new length.
+      __ Integer32ToSmiField(FieldOperand(rdx, JSArray::kLengthOffset), rax);
 
+      // Push the element.
+      __ lea(rdx, FieldOperand(rbx,
+                               rax, times_pointer_size,
+                               FixedArray::kHeaderSize - argc * kPointerSize));
+      __ movq(Operand(rdx, 0), rcx);
+
+      __ RecordWrite(
+          rbx, rdx, rcx, kDontSaveFPRegs, EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
+
+      __ Integer32ToSmi(rax, rax);  // Return new length as smi.
       __ ret((argc + 1) * kPointerSize);
 
       __ bind(&attempt_to_grow_elements);
       if (!FLAG_inline_new) {
         __ jmp(&call_builtin);
+      }
+
+      __ movq(rdi, Operand(rsp, argc * kPointerSize));
+      if (FLAG_smi_only_arrays) {
+        // Growing elements that are SMI-only requires special handling in case
+        // the new element is non-Smi. For now, delegate to the builtin.
+        Label no_fast_elements_check;
+        __ JumpIfSmi(rdi, &no_fast_elements_check);
+        __ movq(rsi, FieldOperand(rdx, HeapObject::kMapOffset));
+        __ CheckFastObjectElements(rsi, &call_builtin, Label::kFar);
+        __ bind(&no_fast_elements_check);
       }
 
       ExternalReference new_space_allocation_top =
@@ -1494,15 +1519,21 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
 
       // We fit and could grow elements.
       __ Store(new_space_allocation_top, rcx);
-      __ movq(rcx, Operand(rsp, argc * kPointerSize));
 
       // Push the argument...
-      __ movq(Operand(rdx, 0), rcx);
+      __ movq(Operand(rdx, 0), rdi);
       // ... and fill the rest with holes.
       __ LoadRoot(kScratchRegister, Heap::kTheHoleValueRootIndex);
       for (int i = 1; i < kAllocationDelta; i++) {
         __ movq(Operand(rdx, i * kPointerSize), kScratchRegister);
       }
+
+      // We know the elements array is in new space so we don't need the
+      // remembered set, but we just pushed a value onto it so we may have to
+      // tell the incremental marker to rescan the object that we just grew.  We
+      // don't need to worry about the holes because they are in old space and
+      // already marked black.
+      __ RecordWrite(rbx, rdx, rdi, kDontSaveFPRegs, OMIT_REMEMBERED_SET);
 
       // Restore receiver to rdx as finish sequence assumes it's here.
       __ movq(rdx, Operand(rsp, (argc + 1) * kPointerSize));
@@ -1515,7 +1546,6 @@ MaybeObject* CallStubCompiler::CompileArrayPushCall(Object* object,
       __ Integer32ToSmi(rax, rax);
       __ movq(FieldOperand(rdx, JSArray::kLengthOffset), rax);
 
-      // Elements are in new space, so write barrier is not required.
       __ ret((argc + 1) * kPointerSize);
     }
 
@@ -2468,19 +2498,36 @@ MaybeObject* StoreStubCompiler::CompileStoreGlobal(GlobalObject* object,
          Handle<Map>(object->map()));
   __ j(not_equal, &miss);
 
+  // Compute the cell operand to use.
+  __ Move(rbx, Handle<JSGlobalPropertyCell>(cell));
+  Operand cell_operand = FieldOperand(rbx, JSGlobalPropertyCell::kValueOffset);
+
   // Check that the value in the cell is not the hole. If it is, this
   // cell could have been deleted and reintroducing the global needs
   // to update the property details in the property dictionary of the
   // global object. We bail out to the runtime system to do that.
-  __ Move(rbx, Handle<JSGlobalPropertyCell>(cell));
-  __ CompareRoot(FieldOperand(rbx, JSGlobalPropertyCell::kValueOffset),
-                 Heap::kTheHoleValueRootIndex);
+  __ CompareRoot(cell_operand, Heap::kTheHoleValueRootIndex);
   __ j(equal, &miss);
 
   // Store the value in the cell.
-  __ movq(FieldOperand(rbx, JSGlobalPropertyCell::kValueOffset), rax);
+  __ movq(cell_operand, rax);
+  Label done;
+  __ JumpIfSmi(rax, &done);
+
+  __ movq(rcx, rax);
+  __ lea(rdx, cell_operand);
+  // Cells are always in the remembered set.
+  __ RecordWrite(rbx,  // Object.
+                 rdx,  // Address.
+                 rcx,  // Value.
+                 kDontSaveFPRegs,
+                 OMIT_REMEMBERED_SET,
+                 OMIT_SMI_CHECK);
+
 
   // Return the value (register rax).
+  __ bind(&done);
+
   Counters* counters = isolate()->counters();
   __ IncrementCounter(counters->named_store_global_inline(), 1);
   __ ret(0);
@@ -3441,6 +3488,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       __ movsd(Operand(rbx, rdi, times_8, 0), xmm0);
       break;
     case FAST_ELEMENTS:
+    case FAST_SMI_ONLY_ELEMENTS:
     case FAST_DOUBLE_ELEMENTS:
     case DICTIONARY_ELEMENTS:
     case NON_STRICT_ARGUMENTS_ELEMENTS:
@@ -3508,6 +3556,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
         case EXTERNAL_FLOAT_ELEMENTS:
         case EXTERNAL_DOUBLE_ELEMENTS:
         case FAST_ELEMENTS:
+        case FAST_SMI_ONLY_ELEMENTS:
         case FAST_DOUBLE_ELEMENTS:
         case DICTIONARY_ELEMENTS:
         case NON_STRICT_ARGUMENTS_ELEMENTS:
@@ -3639,8 +3688,10 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
 }
 
 
-void KeyedStoreStubCompiler::GenerateStoreFastElement(MacroAssembler* masm,
-                                                      bool is_js_array) {
+void KeyedStoreStubCompiler::GenerateStoreFastElement(
+    MacroAssembler* masm,
+    bool is_js_array,
+    ElementsKind elements_kind) {
   // ----------- S t a t e -------------
   //  -- rax    : value
   //  -- rcx    : key
@@ -3670,13 +3721,21 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(MacroAssembler* masm,
     __ j(above_equal, &miss_force_generic);
   }
 
-  // Do the store and update the write barrier. Make sure to preserve
-  // the value in register eax.
-  __ movq(rdx, rax);
+  // Do the store and update the write barrier.
   __ SmiToInteger32(rcx, rcx);
-  __ movq(FieldOperand(rdi, rcx, times_pointer_size, FixedArray::kHeaderSize),
-          rax);
-  __ RecordWrite(rdi, 0, rdx, rcx);
+  if (elements_kind == FAST_SMI_ONLY_ELEMENTS) {
+    __ JumpIfNotSmi(rax, &miss_force_generic);
+    __ movq(FieldOperand(rdi, rcx, times_pointer_size, FixedArray::kHeaderSize),
+            rax);
+  } else {
+    ASSERT(elements_kind == FAST_ELEMENTS);
+    __ lea(rcx,
+           FieldOperand(rdi, rcx, times_pointer_size, FixedArray::kHeaderSize));
+    __ movq(Operand(rcx, 0), rax);
+    // Make sure to preserve the value in register rax.
+    __ movq(rdx, rax);
+    __ RecordWrite(rdi, rcx, rdx, kDontSaveFPRegs);
+  }
 
   // Done.
   __ ret(0);

@@ -79,12 +79,12 @@ void Builtins::Generate_JSConstructCall(MacroAssembler* masm) {
   //  -- rdi: constructor function
   // -----------------------------------
 
-  Label non_function_call;
+  Label slow, non_function_call;
   // Check that function is not a smi.
   __ JumpIfSmi(rdi, &non_function_call);
   // Check that function is a JSFunction.
   __ CmpObjectType(rdi, JS_FUNCTION_TYPE, rcx);
-  __ j(not_equal, &non_function_call);
+  __ j(not_equal, &slow);
 
   // Jump to the function-specific construct stub.
   __ movq(rbx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
@@ -94,10 +94,19 @@ void Builtins::Generate_JSConstructCall(MacroAssembler* masm) {
 
   // rdi: called object
   // rax: number of arguments
+  // rcx: object map
+  Label do_call;
+  __ bind(&slow);
+  __ CmpInstanceType(rcx, JS_FUNCTION_PROXY_TYPE);
+  __ j(not_equal, &non_function_call);
+  __ GetBuiltinEntry(rdx, Builtins::CALL_FUNCTION_PROXY_AS_CONSTRUCTOR);
+  __ jmp(&do_call);
+
   __ bind(&non_function_call);
+  __ GetBuiltinEntry(rdx, Builtins::CALL_NON_FUNCTION_AS_CONSTRUCTOR);
+  __ bind(&do_call);
   // Set expected number of arguments to zero (not changing rax).
   __ Set(rbx, 0);
-  __ GetBuiltinEntry(rdx, Builtins::CALL_NON_FUNCTION_AS_CONSTRUCTOR);
   __ SetCallKind(rcx, CALL_AS_METHOD);
   __ Jump(masm->isolate()->builtins()->ArgumentsAdaptorTrampoline(),
           RelocInfo::CODE_TARGET);
@@ -198,22 +207,23 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // rax: initial map
       // rbx: JSObject
       // rdi: start of next object
-      { Label loop, entry;
-        // To allow for truncation.
-        if (count_constructions) {
-          __ LoadRoot(rdx, Heap::kOnePointerFillerMapRootIndex);
-        } else {
-          __ LoadRoot(rdx, Heap::kUndefinedValueRootIndex);
+      __ lea(rcx, Operand(rbx, JSObject::kHeaderSize));
+      __ LoadRoot(rdx, Heap::kUndefinedValueRootIndex);
+      if (count_constructions) {
+        __ movzxbq(rsi,
+                   FieldOperand(rax, Map::kPreAllocatedPropertyFieldsOffset));
+        __ lea(rsi,
+               Operand(rbx, rsi, times_pointer_size, JSObject::kHeaderSize));
+        // rsi: offset of first field after pre-allocated fields
+        if (FLAG_debug_code) {
+          __ cmpq(rsi, rdi);
+          __ Assert(less_equal,
+                    "Unexpected number of pre-allocated property fields.");
         }
-        __ lea(rcx, Operand(rbx, JSObject::kHeaderSize));
-        __ jmp(&entry);
-        __ bind(&loop);
-        __ movq(Operand(rcx, 0), rdx);
-        __ addq(rcx, Immediate(kPointerSize));
-        __ bind(&entry);
-        __ cmpq(rcx, rdi);
-        __ j(less, &loop);
+        __ InitializeFieldsWithFiller(rcx, rsi, rdx);
+        __ LoadRoot(rdx, Heap::kOnePointerFillerMapRootIndex);
       }
+      __ InitializeFieldsWithFiller(rcx, rdi, rdx);
 
       // Add the object tag to make the JSObject real, so that we can continue
       // and jump into the continuation code at any time from now on. Any
@@ -717,7 +727,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
       __ push(rbx);
       __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
       __ movq(rbx, rax);
-    __ Set(rdx, 0);  // indicate regular JS_FUNCTION
+      __ Set(rdx, 0);  // indicate regular JS_FUNCTION
 
       __ pop(rax);
       __ SmiToInteger32(rax, rax);

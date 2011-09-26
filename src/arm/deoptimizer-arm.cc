@@ -112,11 +112,18 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
   }
 #endif
 
+  Isolate* isolate = code->GetIsolate();
+
   // Add the deoptimizing code to the list.
   DeoptimizingCodeListNode* node = new DeoptimizingCodeListNode(code);
-  DeoptimizerData* data = code->GetIsolate()->deoptimizer_data();
+  DeoptimizerData* data = isolate->deoptimizer_data();
   node->set_next(data->deoptimizing_code_list_);
   data->deoptimizing_code_list_ = node;
+
+  // We might be in the middle of incremental marking with compaction.
+  // Tell collector to treat this code object in a special way and
+  // ignore all slots that might have been recorded on it.
+  isolate->heap()->mark_compact_collector()->InvalidateCode(code);
 
   // Set the code for the function to non-optimized version.
   function->ReplaceCode(function->shared()->code());
@@ -134,7 +141,8 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
 }
 
 
-void Deoptimizer::PatchStackCheckCodeAt(Address pc_after,
+void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
+                                        Address pc_after,
                                         Code* check_code,
                                         Code* replacement_code) {
   const int kInstrSize = Assembler::kInstrSize;
@@ -169,6 +177,13 @@ void Deoptimizer::PatchStackCheckCodeAt(Address pc_after,
          reinterpret_cast<uint32_t>(check_code->entry()));
   Memory::uint32_at(stack_check_address_pointer) =
       reinterpret_cast<uint32_t>(replacement_code->entry());
+
+  RelocInfo rinfo(pc_after - 2 * kInstrSize,
+                  RelocInfo::CODE_TARGET,
+                  0,
+                  unoptimized_code);
+  unoptimized_code->GetHeap()->incremental_marking()->RecordWriteIntoCode(
+      unoptimized_code, &rinfo, replacement_code);
 }
 
 
@@ -193,6 +208,9 @@ void Deoptimizer::RevertStackCheckCodeAt(Address pc_after,
          reinterpret_cast<uint32_t>(replacement_code->entry()));
   Memory::uint32_at(stack_check_address_pointer) =
       reinterpret_cast<uint32_t>(check_code->entry());
+
+  check_code->GetHeap()->incremental_marking()->
+      RecordCodeTargetPatch(pc_after - 2 * kInstrSize, check_code);
 }
 
 
