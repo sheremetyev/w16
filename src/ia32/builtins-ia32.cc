@@ -121,6 +121,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
   // Should never count constructions for api objects.
   ASSERT(!is_api_function || !count_constructions);
 
+  __ CheckThread();
+
   // Enter a construct frame.
   {
     FrameScope scope(masm, StackFrame::CONSTRUCT);
