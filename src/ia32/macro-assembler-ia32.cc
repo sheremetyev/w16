@@ -2286,11 +2286,18 @@ void MacroAssembler::CheckThread() {
   Label ok;
   ExternalReference threadid_function(
     ExternalReference::threadid_function(isolate()));
+  push(eax);
+  push(ecx);
+  push(edx);
+  // eax, ecx and edx can be trashed by C calling conventions
   call(threadid_function.address(), RelocInfo::RUNTIME_ENTRY);
   cmp(eax, ThreadId::Current().ToInteger());
   j(equal, &ok, Label::kNear);
   int3();
   bind(&ok);
+  pop(edx);
+  pop(ecx);
+  pop(eax);
 #endif // DEBUG
 }
 
