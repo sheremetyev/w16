@@ -2151,6 +2151,8 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_SetCode) {
     // doesn't like seeing source code for constructors.
     // TODO(w16): compile built-ins for all threads without storing source
     target->shared()->set_script(shared->script());
+    target->shared()->set_start_position(shared->start_position());
+    target->shared()->set_end_position(shared->end_position());
     target->shared()->code()->set_optimizable(false);
     // Clear the optimization hints related to the compiled code as these are no
     // longer valid when the code is overwritten.
