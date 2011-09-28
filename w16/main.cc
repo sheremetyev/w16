@@ -170,7 +170,6 @@ public:
 int main(int argc, char **argv) {
   // disable V8 optimisations
   char flags[1024] = { 0 };
-  strcat(flags, " --nostm");
   strcat(flags, " --nouse-ic"); // disable inline caching
   strcat(flags, " --noinline-new"); // disable inline allocation
   strcat(flags, " --noopt"); // disable profiling thread
