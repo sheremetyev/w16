@@ -240,6 +240,8 @@ class GlobalHandles {
 
   Isolate* isolate_;
 
+  Mutex* mutex_;
+
   // Field always containing the number of weak and near-death handles.
   int number_of_weak_handles_;
 

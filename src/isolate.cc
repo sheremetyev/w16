@@ -89,7 +89,6 @@ ThreadLocalTop::ThreadLocalTop()
       unicode_cache_(NULL),
       inner_pointer_to_code_cache_(NULL),
       write_input_buffer_(NULL),
-      global_handles_(NULL),
       string_tracker_(NULL),
       regexp_stack_(NULL)
 {
@@ -159,9 +158,6 @@ ThreadLocalTop::~ThreadLocalTop() {
   delete string_tracker_;
   string_tracker_ = NULL;
 
-  delete global_handles_;
-  global_handles_ = NULL;
-
   delete[] assembler_spare_buffer_;
   assembler_spare_buffer_ = NULL;
 
@@ -215,7 +211,6 @@ void ThreadLocalTop::Initialize(Isolate* isolate) {
   unicode_cache_ = new UnicodeCache();
   inner_pointer_to_code_cache_ = new InnerPointerToCodeCache(isolate_);
   write_input_buffer_ = new StringInputBuffer();
-  global_handles_ = new GlobalHandles(isolate_);
   handle_scope_implementer_ = new HandleScopeImplementer(isolate_);
   stub_cache_ = new StubCache(isolate_);
   regexp_stack_ = new RegExpStack();
@@ -1385,6 +1380,7 @@ Isolate::Isolate()
       in_use_list_(0),
       free_list_(0),
       preallocated_storage_preallocated_(false),
+      global_handles_(NULL),
       embedder_data_(NULL) {
   TRACE_ISOLATE(constructor);
 
@@ -1517,6 +1513,8 @@ Isolate::~Isolate() {
   memory_allocator_ = NULL;
   delete code_range_;
   code_range_ = NULL;
+  delete global_handles_;
+  global_handles_ = NULL;
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
   delete debugger_;
@@ -1600,6 +1598,7 @@ bool Isolate::Init(Deserializer* des) {
   memory_allocator_ = new MemoryAllocator(this);
   code_range_ = new CodeRange(this);
 
+  global_handles_ = new GlobalHandles(this);
   bootstrapper_ = new Bootstrapper();
 
   // Enable logging before setting up the heap

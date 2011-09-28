@@ -382,6 +382,7 @@ class GlobalHandles::NodeIterator {
 
 GlobalHandles::GlobalHandles(Isolate* isolate)
     : isolate_(isolate),
+      mutex_(OS::CreateMutex()),
       number_of_weak_handles_(0),
       number_of_global_object_weak_handles_(0),
       first_block_(NULL),
@@ -402,6 +403,8 @@ GlobalHandles::~GlobalHandles() {
 
 
 Handle<Object> GlobalHandles::Create(Object* value) {
+  ScopedLock lock(mutex_);
+
   isolate_->counters()->global_handles()->Increment();
   if (first_free_ == NULL) {
     first_block_ = new NodeBlock(first_block_);
@@ -422,6 +425,8 @@ Handle<Object> GlobalHandles::Create(Object* value) {
 
 
 void GlobalHandles::Destroy(Object** location) {
+  ScopedLock lock(mutex_);
+
   isolate_->counters()->global_handles()->Decrement();
   if (location == NULL) return;
   Node::FromLocation(location)->Release(this);

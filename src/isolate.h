@@ -471,7 +471,6 @@ class ThreadLocalTop {
   Zone zone_;
   InnerPointerToCodeCache* inner_pointer_to_code_cache_;
   StringInputBuffer* write_input_buffer_;
-  GlobalHandles* global_handles_;
   RuntimeState runtime_state_;
   StringTracker* string_tracker_;
   unibrow::Mapping<unibrow::Ecma262UnCanonicalize> jsregexp_uncanonicalize_;
@@ -936,7 +935,7 @@ class Isolate {
 
   StringInputBuffer* write_input_buffer() { return thread_local_top()->write_input_buffer_; }
 
-  GlobalHandles* global_handles() { return thread_local_top()->global_handles_; }
+  GlobalHandles* global_handles() { return global_handles_; }
 
   StringTracker* string_tracker() { return thread_local_top()->string_tracker_; }
 
@@ -1150,6 +1149,7 @@ class Isolate {
   PreallocatedStorage in_use_list_;
   PreallocatedStorage free_list_;
   bool preallocated_storage_preallocated_;
+  GlobalHandles* global_handles_;
   bool fp_stubs_generated_;
   StaticResource<SafeStringInputBuffer> compiler_safe_string_input_buffer_;
   Builtins builtins_;
