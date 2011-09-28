@@ -842,6 +842,10 @@ class Isolate {
   THREAD_INIT_LIST(THREAD_ACCESSOR)
 #undef THREAD_ACCESSOR
 
+  Relocatable* relocatable_top(int thread_index) {
+    return tops_[thread_index]->relocatable_top();
+  }
+
 #define GLOBAL_ARRAY_ACCESSOR(type, name, length)                       \
   inline type* name() {                                                 \
     ASSERT(OFFSET_OF(Isolate, name##_) == name##_debug_offset_);        \
@@ -874,6 +878,7 @@ class Isolate {
   CodeRange* code_range() { return code_range_; }
   RuntimeProfiler* runtime_profiler() { return runtime_profiler_; }
   CompilationCache* compilation_cache() { return thread_local_top()->compilation_cache_; }
+  CompilationCache* compilation_cache(int thread_index) { return tops_[thread_index]->compilation_cache_; }
   Logger* logger() {
     // Call InitializeLoggingAndCounters() if logging is needed before
     // the isolate is fully initialized.
@@ -918,6 +923,13 @@ class Isolate {
 
   v8::ImplementationUtilities::HandleScopeData* handle_scope_data() {
     return &thread_local_top()->handle_scope_data_;
+  }
+  v8::ImplementationUtilities::HandleScopeData* handle_scope_data(int thread_index) {
+    return &tops_[thread_index]->handle_scope_data_;
+  }
+  HandleScopeImplementer* handle_scope_implementer(int thread_index) {
+    ASSERT(tops_[thread_index]->handle_scope_implementer_);
+    return tops_[thread_index]->handle_scope_implementer_;
   }
   HandleScopeImplementer* handle_scope_implementer() {
     ASSERT(thread_local_top()->handle_scope_implementer_);

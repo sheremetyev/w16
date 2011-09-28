@@ -411,9 +411,8 @@ void STM::LeaveCollectionScope() {
 }
 
 void STM::Iterate(ObjectVisitor* v) {
-  Transaction* trans = isolate_->get_transaction();
-  if (trans != NULL) {
-    trans->Iterate(v);
+  for (int i = 0; i < transactions_.length(); i++) {
+    transactions_[i]->Iterate(v);
   }
 }
 

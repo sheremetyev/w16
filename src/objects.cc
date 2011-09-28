@@ -5795,7 +5795,9 @@ void Relocatable::PostGarbageCollectionProcessing() {
 
 void Relocatable::Iterate(ObjectVisitor* v) {
   Isolate* isolate = Isolate::Current();
-  Iterate(v, isolate->relocatable_top());
+  for (int i = 0; i < MAX_THREADS; i++) {
+    Iterate(v, isolate->relocatable_top(i));
+  }
 }
 
 

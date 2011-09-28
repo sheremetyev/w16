@@ -5068,11 +5068,16 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   }
 #endif
   v->Synchronize("debug");
-  isolate_->compilation_cache()->Iterate(v);
+  for (int i = 0; i < MAX_THREADS; i++) {
+    isolate_->compilation_cache(i)->Iterate(v);
+  }
   v->Synchronize("compilationcache");
 
   // Iterate over local handles in handle scopes.
-  isolate_->handle_scope_implementer()->Iterate(v);
+  for (int i = 0; i < MAX_THREADS; i++) {
+    isolate_->handle_scope_implementer(i)->Iterate(v,
+      isolate_->handle_scope_data(i));
+  }
   v->Synchronize("handlescope");
 
   // Iterate over the builtin code objects and code stubs in the

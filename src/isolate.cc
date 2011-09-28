@@ -546,8 +546,9 @@ void Isolate::Iterate(ObjectVisitor* v, ThreadLocalTop* thread) {
 
 
 void Isolate::Iterate(ObjectVisitor* v) {
-  ThreadLocalTop* current_t = thread_local_top();
-  Iterate(v, current_t);
+  for (int i = 0; i < MAX_THREADS; i++) {
+    Iterate(v, tops_[i]);
+  }
 }
 
 
@@ -1423,6 +1424,12 @@ void Isolate::InitializeThreads() {
   for (int i = 0; i < MAX_THREADS; i++) {
     tops_[i] = new ThreadLocalTop();
     tops_[i]->Initialize(this);
+    // copied from InitializeThreadLocal()
+    tops_[i]->pending_exception_ = heap_.the_hole_value();
+    tops_[i]->has_pending_message_ = false;
+    tops_[i]->pending_message_obj_ = heap_.the_hole_value();
+    tops_[i]->pending_message_script_ = NULL;
+    tops_[i]->scheduled_exception_ = heap_.the_hole_value();
   }
 }
 

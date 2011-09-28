@@ -413,6 +413,7 @@ class HandleScopeImplementer {
 
   // Garbage collection support.
   void Iterate(v8::internal::ObjectVisitor* v);
+  void Iterate(v8::internal::ObjectVisitor* v, v8::ImplementationUtilities::HandleScopeData* data);
   static char* Iterate(v8::internal::ObjectVisitor* v, char* data);
 
 

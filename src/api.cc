@@ -6051,4 +6051,11 @@ void HandleScopeImplementer::Iterate(ObjectVisitor* v) {
 }
 
 
+void HandleScopeImplementer::Iterate(ObjectVisitor* v,
+  v8::ImplementationUtilities::HandleScopeData* data) {
+  handle_scope_data_ = *data;
+  IterateThis(v);
+}
+
+
 } }  // namespace v8::internal

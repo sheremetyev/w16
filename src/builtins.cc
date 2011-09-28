@@ -1742,7 +1742,9 @@ void Builtins::TearDown() {
 
 
 void Builtins::IterateBuiltins(ObjectVisitor* v) {
-  v->VisitPointers(&builtins_[0][0], &builtins_[builtin_count][MAX_THREADS]);
+  for (int i = 0; i < builtin_count; i++) {
+    v->VisitPointers(&builtins_[i][0], &builtins_[i][MAX_THREADS]);
+  }
 }
 
 
