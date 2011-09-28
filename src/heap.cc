@@ -2342,13 +2342,6 @@ bool Heap::CreateInitialObjects() {
   }
   set_single_character_string_cache(FixedArray::cast(obj));
 
-  // Allocate cache for string split.
-  { MaybeObject* maybe_obj =
-        AllocateFixedArray(StringSplitCache::kStringSplitCacheSize, TENURED);
-    if (!maybe_obj->ToObject(&obj)) return false;
-  }
-  set_string_split_cache(FixedArray::cast(obj));
-
   // Allocate cache for external strings pointing to native source code.
   { MaybeObject* maybe_obj = AllocateFixedArray(Natives::GetBuiltinsCount());
     if (!maybe_obj->ToObject(&obj)) return false;
@@ -5547,6 +5540,13 @@ bool Heap::ThreadSetup() {
     if (!maybe_obj->ToObject(&obj)) return false;
   }
   set_polymorphic_code_cache(PolymorphicCodeCache::cast(obj));
+
+  // Allocate cache for string split.
+  { MaybeObject* maybe_obj =
+        AllocateFixedArray(StringSplitCache::kStringSplitCacheSize, TENURED);
+    if (!maybe_obj->ToObject(&obj)) return false;
+  }
+  set_string_split_cache(FixedArray::cast(obj));
 
   set_instanceof_cache_function(Smi::FromInt(0));
   set_instanceof_cache_map(Smi::FromInt(0));
