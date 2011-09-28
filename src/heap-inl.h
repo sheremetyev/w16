@@ -181,7 +181,7 @@ MaybeObject* Heap::CopyFixedDoubleArray(FixedDoubleArray* src) {
 MaybeObject* Heap::AllocateRaw(int size_in_bytes,
                                AllocationSpace space,
                                AllocationSpace retry_space) {
-  ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  ASSERT(allocation_allowed() && gc_state_ == NOT_IN_GC);
   ASSERT(space != NEW_SPACE ||
          retry_space == OLD_POINTER_SPACE ||
          retry_space == OLD_DATA_SPACE ||
@@ -559,8 +559,8 @@ Isolate* Heap::isolate() {
 #ifdef DEBUG
 
 inline bool Heap::allow_allocation(bool new_state) {
-  bool old = allocation_allowed_;
-  allocation_allowed_ = new_state;
+  bool old = allocation_allowed();
+  allocation_allowed() = new_state;
   return old;
 }
 

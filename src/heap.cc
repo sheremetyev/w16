@@ -106,7 +106,6 @@ Heap::Heap()
       gc_count_(0),
       unflattened_strings_length_(0),
 #ifdef DEBUG
-      allocation_allowed_(true),
       allocation_timeout_(0),
       disallow_allocation_failure_(false),
       debug_utils_(NULL),
@@ -145,6 +144,12 @@ Heap::Heap()
       configured_(false),
       last_empty_page_was_given_back_to_the_os_(false),
       chunks_queued_for_free_(NULL) {
+#ifdef DEBUG
+  for (int i = 0; i < MAX_THREADS; i++) {
+      allocation_allowed__[i] = true;
+  }
+#endif
+
   // Allow build-time customization of the max semispace size. Building
   // V8 with snapshots and a non-default max semispace size is much
   // easier if you can define it as part of the build environment.
@@ -370,7 +375,7 @@ void Heap::GarbageCollectionPrologue() {
   gc_count_++;
   unflattened_strings_length_ = 0;
 #ifdef DEBUG
-  ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  ASSERT(allocation_allowed() && gc_state_ == NOT_IN_GC);
   allow_allocation(false);
 
   if (FLAG_verify_heap) {
@@ -704,7 +709,7 @@ bool Heap::PerformGarbageCollection(GarbageCollector collector,
 
   VerifySymbolTable();
   if (collector == MARK_COMPACTOR && global_gc_prologue_callback_) {
-    ASSERT(!allocation_allowed_);
+    ASSERT(!allocation_allowed());
     GCTracer::Scope scope(tracer, GCTracer::Scope::EXTERNAL);
     global_gc_prologue_callback_();
   }
@@ -794,7 +799,7 @@ bool Heap::PerformGarbageCollection(GarbageCollector collector,
   }
 
   if (collector == MARK_COMPACTOR && global_gc_epilogue_callback_) {
-    ASSERT(!allocation_allowed_);
+    ASSERT(!allocation_allowed());
     GCTracer::Scope scope(tracer, GCTracer::Scope::EXTERNAL);
     global_gc_epilogue_callback_();
   }
@@ -2086,7 +2091,7 @@ MaybeObject* Heap::AllocateHeapNumber(double value) {
   // This version of AllocateHeapNumber is optimized for
   // allocation in new space.
   STATIC_ASSERT(HeapNumber::kSize <= Page::kMaxHeapObjectSize);
-  ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  ASSERT(allocation_allowed() && gc_state_ == NOT_IN_GC);
 
   Object* result;
   { AllocationScope allocation_scope;
@@ -3382,7 +3387,7 @@ MaybeObject* Heap::AllocateArgumentsObject(Object* callee, int length) {
 
   // This calls Copy directly rather than using Heap::AllocateRaw so we
   // duplicate the check here.
-  ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  ASSERT(allocation_allowed() && gc_state_ == NOT_IN_GC);
 
   // Check that the size of the boilerplate matches our
   // expectations. The ArgumentsAccessStub::GenerateNewObject relies

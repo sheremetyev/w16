@@ -1186,7 +1186,7 @@ class Heap {
   inline bool IsInGCPostProcessing() { return gc_post_processing_depth_ > 0; }
 
 #ifdef DEBUG
-  bool IsAllocationAllowed() { return allocation_allowed_; }
+  bool IsAllocationAllowed() { return allocation_allowed(); }
   inline bool allow_allocation(bool enable);
 
   bool disallow_allocation_failure() {
@@ -1550,7 +1550,8 @@ class Heap {
 #undef ROOT_ACCESSOR
 
 #ifdef DEBUG
-  bool allocation_allowed_;
+  bool allocation_allowed__[MAX_THREADS];
+  bool& allocation_allowed() { return allocation_allowed__[ThreadIndex()]; }
 
   // If the --gc-interval flag is set to a positive value, this
   // variable holds the value indicating the number of allocations
