@@ -773,6 +773,10 @@ void BinaryOpStub::GenerateTypeTransition(MacroAssembler* masm) {
 
 
 void BinaryOpStub::Generate(MacroAssembler* masm) {
+  // Explicitly allow generation of nested stubs. It is safe here because
+  // generation code does not use any raw pointers.
+  AllowStubCallsScope allow_stub_calls(masm, true);
+
   switch (operands_type_) {
     case BinaryOpIC::UNINITIALIZED:
       GenerateTypeTransition(masm);
@@ -3261,6 +3265,22 @@ void StackCheckStub::Generate(MacroAssembler* masm) {
 }
 
 
+void CallFunctionStub::FinishCode(Code* code) {
+  code->set_has_function_cache(false);
+}
+
+
+void CallFunctionStub::Clear(Heap* heap, Address address) {
+  UNREACHABLE();
+}
+
+
+Object* CallFunctionStub::GetCachedValue(Address address) {
+  UNREACHABLE();
+  return NULL;
+}
+
+
 void CallFunctionStub::Generate(MacroAssembler* masm) {
   Label slow, non_function;
 
@@ -3349,14 +3369,17 @@ bool CEntryStub::NeedsImmovableCode() {
 }
 
 
-bool CEntryStub::CompilingCallsToThisStubIsGCSafe() {
+bool CEntryStub::IsPregenerated() {
+#ifdef _WIN64
   return result_size_ == 1;
+#else
+  return true;
+#endif
 }
 
 
 void CodeStub::GenerateStubsAheadOfTime() {
-  CEntryStub save_doubles(1, kSaveFPRegs);
-  save_doubles.GetCode();
+  CEntryStub::GenerateAheadOfTime();
   StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime();
   // It is important that the store buffer overflow stubs are generated first.
   RecordWriteStub::GenerateFixedRegStubsAheadOfTime();
@@ -3364,6 +3387,14 @@ void CodeStub::GenerateStubsAheadOfTime() {
 
 
 void CodeStub::GenerateFPStubs() {
+}
+
+
+void CEntryStub::GenerateAheadOfTime() {
+  CEntryStub stub(1, kDontSaveFPRegs);
+  stub.GetCode()->set_is_pregenerated(true);
+  CEntryStub save_doubles(1, kSaveFPRegs);
+  save_doubles.GetCode()->set_is_pregenerated(true);
 }
 
 
@@ -5578,7 +5609,7 @@ struct AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
 };
 
 
-bool RecordWriteStub::CompilingCallsToThisStubIsGCSafe() {
+bool RecordWriteStub::IsPregenerated() {
   for (AheadOfTimeWriteBarrierStubList* entry = kAheadOfTime;
        !entry->object.is(no_reg);
        entry++) {
@@ -5596,9 +5627,9 @@ bool RecordWriteStub::CompilingCallsToThisStubIsGCSafe() {
 
 void StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime() {
   StoreBufferOverflowStub stub1(kDontSaveFPRegs);
-  stub1.GetCode();
+  stub1.GetCode()->set_is_pregenerated(true);
   StoreBufferOverflowStub stub2(kSaveFPRegs);
-  stub2.GetCode();
+  stub2.GetCode()->set_is_pregenerated(true);
 }
 
 
@@ -5611,7 +5642,7 @@ void RecordWriteStub::GenerateFixedRegStubsAheadOfTime() {
                          entry->address,
                          entry->action,
                          kDontSaveFPRegs);
-    stub.GetCode();
+    stub.GetCode()->set_is_pregenerated(true);
   }
 }
 

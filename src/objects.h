@@ -3657,6 +3657,11 @@ class Code: public HeapObject {
   inline int major_key();
   inline void set_major_key(int value);
 
+  // For stubs, tells whether they should always exist, so that they can be
+  // called from other stubs.
+  inline bool is_pregenerated();
+  inline void set_is_pregenerated(bool value);
+
   // [optimizable]: For FUNCTION kind, tells if it is optimizable.
   inline bool optimizable();
   inline void set_optimizable(bool value);
@@ -3715,6 +3720,11 @@ class Code: public HeapObject {
   // [to_boolean_foo]: For kind TO_BOOLEAN_IC tells what state the stub is in.
   inline byte to_boolean_state();
   inline void set_to_boolean_state(byte value);
+
+  // For kind STUB, major_key == CallFunction, tells whether there is
+  // a function cache in the instruction stream.
+  inline bool has_function_cache();
+  inline void set_has_function_cache(bool flag);
 
   // Get the safepoint entry for the given pc.
   SafepointEntry GetSafepointEntry(Address pc);
@@ -3855,6 +3865,7 @@ class Code: public HeapObject {
   static const int kBinaryOpTypeOffset = kStubMajorKeyOffset + 1;
   static const int kCompareStateOffset = kStubMajorKeyOffset + 1;
   static const int kToBooleanTypeOffset = kStubMajorKeyOffset + 1;
+  static const int kHasFunctionCacheOffset = kStubMajorKeyOffset + 1;
 
   static const int kFullCodeFlags = kOptimizableOffset + 1;
   class FullCodeFlagsHasDeoptimizationSupportField:
@@ -3874,9 +3885,10 @@ class Code: public HeapObject {
   class KindField: public BitField<Kind, 7, 4> {};
   class CacheHolderField: public BitField<InlineCacheHolderFlag, 11, 1> {};
   class ExtraICStateField: public BitField<ExtraICState, 12, 2> {};
+  class IsPregeneratedField: public BitField<bool, 14, 1> {};
 
   // Signed field cannot be encoded using the BitField class.
-  static const int kArgumentsCountShift = 14;
+  static const int kArgumentsCountShift = 15;
   static const int kArgumentsCountMask = ~((1 << kArgumentsCountShift) - 1);
 
   static const int kFlagsNotUsedInLookup =
@@ -7493,6 +7505,13 @@ class ObjectVisitor BASE_EMBEDDED {
 
   // Handy shorthand for visiting a single pointer.
   virtual void VisitPointer(Object** p) { VisitPointers(p, p + 1); }
+
+  // Visit pointer embedded into a code object.
+  virtual void VisitEmbeddedPointer(Code* host, Object** p) {
+    // Default implementation for the convenience of users that do
+    // not care about the host object.
+    VisitPointer(p);
+  }
 
   // Visits a contiguous arrays of external references (references to the C++
   // heap) in the half-open range [start, end). Any or all of the values

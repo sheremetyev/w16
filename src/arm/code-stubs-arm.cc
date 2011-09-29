@@ -859,7 +859,7 @@ void FloatingPointHelper::CallCCodeForDoubleOperation(
 }
 
 
-bool WriteInt32ToHeapNumberStub::CompilingCallsToThisStubIsGCSafe() {
+bool WriteInt32ToHeapNumberStub::IsPregenerated() {
   // These variants are compiled ahead of time.  See next method.
   if (the_int_.is(r1) && the_heap_number_.is(r0) && scratch_.is(r2)) {
     return true;
@@ -877,8 +877,8 @@ bool WriteInt32ToHeapNumberStub::CompilingCallsToThisStubIsGCSafe() {
 void WriteInt32ToHeapNumberStub::GenerateFixedRegStubsAheadOfTime() {
   WriteInt32ToHeapNumberStub stub1(r1, r0, r2);
   WriteInt32ToHeapNumberStub stub2(r2, r0, r3);
-  Handle<Code> code1 = stub1.GetCode();
-  Handle<Code> code2 = stub2.GetCode();
+  stub1.GetCode()->set_is_pregenerated(true);
+  stub2.GetCode()->set_is_pregenerated(true);
 }
 
 
@@ -2094,6 +2094,10 @@ void BinaryOpStub::GenerateTypeTransitionWithSavedArgs(
 
 
 void BinaryOpStub::Generate(MacroAssembler* masm) {
+  // Explicitly allow generation of nested stubs. It is safe here because
+  // generation code does not use any raw pointers.
+  AllowStubCallsScope allow_stub_calls(masm, true);
+
   switch (operands_type_) {
     case BinaryOpIC::UNINITIALIZED:
       GenerateTypeTransition(masm);
@@ -3394,21 +3398,34 @@ bool CEntryStub::NeedsImmovableCode() {
 }
 
 
-bool CEntryStub::CompilingCallsToThisStubIsGCSafe() {
+bool CEntryStub::IsPregenerated() {
   return (!save_doubles_ || ISOLATE->fp_stubs_generated()) &&
           result_size_ == 1;
 }
 
 
 void CodeStub::GenerateStubsAheadOfTime() {
+  CEntryStub::GenerateAheadOfTime();
   WriteInt32ToHeapNumberStub::GenerateFixedRegStubsAheadOfTime();
+  StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime();
+  RecordWriteStub::GenerateFixedRegStubsAheadOfTime();
 }
 
 
 void CodeStub::GenerateFPStubs() {
   CEntryStub save_doubles(1, kSaveFPRegs);
   Handle<Code> code = save_doubles.GetCode();
+  code->set_is_pregenerated(true);
+  StoreBufferOverflowStub stub(kSaveFPRegs);
+  stub.GetCode()->set_is_pregenerated(true);
   code->GetIsolate()->set_fp_stubs_generated(true);
+}
+
+
+void CEntryStub::GenerateAheadOfTime() {
+  CEntryStub stub(1, kDontSaveFPRegs);
+  Handle<Code> code = stub.GetCode();
+  code->set_is_pregenerated(true);
 }
 
 
@@ -4812,6 +4829,22 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
 
   __ bind(&slowcase);
   __ TailCallRuntime(Runtime::kRegExpConstructResult, 3, 1);
+}
+
+
+void CallFunctionStub::FinishCode(Code* code) {
+  code->set_has_function_cache(false);
+}
+
+
+void CallFunctionStub::Clear(Heap* heap, Address address) {
+  UNREACHABLE();
+}
+
+
+Object* CallFunctionStub::GetCachedValue(Address address) {
+  UNREACHABLE();
+  return NULL;
 }
 
 
@@ -6837,7 +6870,7 @@ struct AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
 };
 
 
-bool RecordWriteStub::CompilingCallsToThisStubIsGCSafe() {
+bool RecordWriteStub::IsPregenerated() {
   for (AheadOfTimeWriteBarrierStubList* entry = kAheadOfTime;
        !entry->object.is(no_reg);
        entry++) {
@@ -6853,11 +6886,14 @@ bool RecordWriteStub::CompilingCallsToThisStubIsGCSafe() {
 }
 
 
+bool StoreBufferOverflowStub::IsPregenerated() {
+  return save_doubles_ == kDontSaveFPRegs || ISOLATE->fp_stubs_generated();
+}
+
+
 void StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime() {
   StoreBufferOverflowStub stub1(kDontSaveFPRegs);
-  stub1.GetCode();
-  StoreBufferOverflowStub stub2(kSaveFPRegs);
-  stub2.GetCode();
+  stub1.GetCode()->set_is_pregenerated(true);
 }
 
 
@@ -6870,7 +6906,7 @@ void RecordWriteStub::GenerateFixedRegStubsAheadOfTime() {
                          entry->address,
                          entry->action,
                          kDontSaveFPRegs);
-    stub.GetCode();
+    stub.GetCode()->set_is_pregenerated(true);
   }
 }
 

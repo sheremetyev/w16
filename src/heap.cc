@@ -2188,9 +2188,6 @@ void Heap::CreateFixedStubs() {
   // create them if we need them during the creation of another stub.
   // Stub creation mixes raw pointers and handles in an unsafe manner so
   // we cannot create stubs while we are creating stubs.
-  CEntryStub ces(1);
-  ces.GetCode();
-
   CodeStub::GenerateStubsAheadOfTime();
 }
 
@@ -4577,8 +4574,11 @@ bool Heap::IdleNotification() {
 
   // Make sure that we have no pending context disposals and
   // conditionally uncommit from space.
-  ASSERT((contexts_disposed_ == 0) || incremental_marking()->IsMarking());
+  // Take into account that we might have decided to delay full collection
+  // because incremental marking is in progress.
+  ASSERT((contexts_disposed_ == 0) || !incremental_marking()->IsStopped());
   if (uncommit) UncommitFromSpace();
+
   return finished;
 }
 

@@ -1692,7 +1692,13 @@ LInstruction* LChunkBuilder::DoCheckSmi(HCheckSmi* instr) {
 
 
 LInstruction* LChunkBuilder::DoCheckFunction(HCheckFunction* instr) {
-  LOperand* value = UseAtStart(instr->value());
+  // If the target is in new space, we'll emit a global cell compare and so
+  // want the value in a register.  If the target gets promoted before we
+  // emit code, we will still get the register but will do an immediate
+  // compare instead of the cell compare.  This is safe.
+  LOperand* value = Isolate::Current()->heap()->InNewSpace(*instr->target())
+      ? UseRegisterAtStart(instr->value())
+      : UseAtStart(instr->value());
   return AssignEnvironment(new LCheckFunction(value));
 }
 
@@ -1779,7 +1785,7 @@ LInstruction* LChunkBuilder::DoConstant(HConstant* instr) {
 
 LInstruction* LChunkBuilder::DoLoadGlobalCell(HLoadGlobalCell* instr) {
   LLoadGlobalCell* result = new LLoadGlobalCell;
-  return instr->check_hole_value()
+  return instr->RequiresHoleCheck()
       ? AssignEnvironment(DefineAsRegister(result))
       : DefineAsRegister(result);
 }
@@ -1798,7 +1804,7 @@ LInstruction* LChunkBuilder::DoStoreGlobalCell(HStoreGlobalCell* instr) {
       new LStoreGlobalCell(UseTempRegister(instr->value()),
                            TempRegister(),
                            TempRegister());
-  return instr->check_hole_value() ? AssignEnvironment(result) : result;
+  return instr->RequiresHoleCheck() ? AssignEnvironment(result) : result;
 }
 
 

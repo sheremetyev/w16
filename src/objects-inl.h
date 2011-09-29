@@ -2935,6 +2935,19 @@ void Code::set_major_key(int major) {
 }
 
 
+bool Code::is_pregenerated() {
+  return kind() == STUB && IsPregeneratedField::decode(flags());
+}
+
+
+void Code::set_is_pregenerated(bool value) {
+  ASSERT(kind() == STUB);
+  Flags f = flags();
+  f = static_cast<Flags>(IsPregeneratedField::update(f, value));
+  set_flags(f);
+}
+
+
 bool Code::optimizable() {
   ASSERT(kind() == FUNCTION);
   return READ_BYTE_FIELD(this, kOptimizableOffset) == 1;
@@ -3099,6 +3112,19 @@ void Code::set_to_boolean_state(byte value) {
   ASSERT(is_to_boolean_ic_stub());
   WRITE_BYTE_FIELD(this, kToBooleanTypeOffset, value);
 }
+
+
+bool Code::has_function_cache() {
+  ASSERT(kind() == STUB);
+  return READ_BYTE_FIELD(this, kHasFunctionCacheOffset) != 0;
+}
+
+
+void Code::set_has_function_cache(bool flag) {
+  ASSERT(kind() == STUB);
+  WRITE_BYTE_FIELD(this, kHasFunctionCacheOffset, flag);
+}
+
 
 bool Code::is_inline_cache_stub() {
   Kind kind = this->kind();

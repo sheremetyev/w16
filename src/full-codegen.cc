@@ -289,9 +289,7 @@ bool FullCodeGenerator::MakeCode(CompilationInfo* info) {
 #ifdef ENABLE_DEBUGGER_SUPPORT
   code->set_has_debug_break_slots(
       info->isolate()->debugger()->IsDebuggerActive());
-#else
-  code->set_has_debug_break_slots(false);
-#endif
+#endif  // ENABLE_DEBUGGER_SUPPORT
   code->set_allow_osr_at_loop_nesting_level(0);
   code->set_stack_check_table_offset(table_offset);
   CodeGenerator::PrintCode(code, info);

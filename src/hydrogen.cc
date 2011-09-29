@@ -1860,7 +1860,7 @@ void HGraph::InsertRepresentationChangeForUse(HValue* value,
   }
 
   if (new_value == NULL) {
-    new_value = new(zone()) HChange(value, value->representation(), to,
+    new_value = new(zone()) HChange(value, to,
                                     is_truncating, deoptimize_on_undefined);
   }
 
@@ -3168,8 +3168,8 @@ void HGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
       if (type == kUseCell) {
         Handle<GlobalObject> global(info()->global_object());
         Handle<JSGlobalPropertyCell> cell(global->GetPropertyCell(&lookup));
-        bool check_hole = !lookup.IsDontDelete() || lookup.IsReadOnly();
-        HLoadGlobalCell* instr = new(zone()) HLoadGlobalCell(cell, check_hole);
+        HLoadGlobalCell* instr =
+            new(zone()) HLoadGlobalCell(cell, lookup.GetPropertyDetails());
         return ast_context()->ReturnInstruction(instr, expr->id());
       } else {
         HValue* context = environment()->LookupContext();
@@ -3630,10 +3630,10 @@ void HGraphBuilder::HandleGlobalVariableAssignment(Variable* var,
   LookupResult lookup;
   GlobalPropertyAccess type = LookupGlobalProperty(var, &lookup, true);
   if (type == kUseCell) {
-    bool check_hole = !lookup.IsDontDelete() || lookup.IsReadOnly();
     Handle<GlobalObject> global(info()->global_object());
     Handle<JSGlobalPropertyCell> cell(global->GetPropertyCell(&lookup));
-    HInstruction* instr = new(zone()) HStoreGlobalCell(value, cell, check_hole);
+    HInstruction* instr =
+        new(zone()) HStoreGlobalCell(value, cell, lookup.GetPropertyDetails());
     instr->set_position(position);
     AddInstruction(instr);
     if (instr->HasSideEffects()) AddSimulate(ast_id);
@@ -4559,7 +4559,9 @@ bool HGraphBuilder::TryInline(Call* expr) {
   HEnvironment* env = environment();
   int current_level = 1;
   while (env->outer() != NULL) {
-    if (FLAG_limit_inlining && current_level == Compiler::kMaxInliningLevels) {
+    if (current_level == (FLAG_limit_inlining
+                          ? Compiler::kMaxInliningLevels
+                          : 2 * Compiler::kMaxInliningLevels)) {
       TraceInline(target, caller, "inline depth limit reached");
       return false;
     }
@@ -5005,6 +5007,7 @@ void HGraphBuilder::VisitCall(Call* expr) {
     }
 
   } else {
+    expr->RecordTypeFeedback(oracle(), CALL_AS_FUNCTION);
     VariableProxy* proxy = expr->expression()->AsVariableProxy();
     bool global_call = proxy != NULL && proxy->var()->IsUnallocated();
 
@@ -5055,6 +5058,46 @@ void HGraphBuilder::VisitCall(Call* expr) {
 
         call = new(zone()) HCallGlobal(context, var->name(), argument_count);
         Drop(argument_count);
+      }
+
+    } else if (expr->IsMonomorphic()) {
+      // The function is on the stack in the unoptimized code during
+      // evaluation of the arguments.
+      CHECK_ALIVE(VisitForValue(expr->expression()));
+      HValue* function = Top();
+      HValue* context = environment()->LookupContext();
+      HGlobalObject* global = new(zone()) HGlobalObject(context);
+      HGlobalReceiver* receiver = new(zone()) HGlobalReceiver(global);
+      AddInstruction(global);
+      PushAndAdd(receiver);
+      CHECK_ALIVE(VisitExpressions(expr->arguments()));
+      AddInstruction(new(zone()) HCheckFunction(function, expr->target()));
+      if (TryInline(expr)) {
+        // The function is lingering in the deoptimization environment.
+        // Handle it by case analysis on the AST context.
+        if (ast_context()->IsEffect()) {
+          Drop(1);
+        } else if (ast_context()->IsValue()) {
+          HValue* result = Pop();
+          Drop(1);
+          Push(result);
+        } else if (ast_context()->IsTest()) {
+          TestContext* context = TestContext::cast(ast_context());
+          if (context->if_true()->HasPredecessor()) {
+            context->if_true()->last_environment()->Drop(1);
+          }
+          if (context->if_false()->HasPredecessor()) {
+            context->if_true()->last_environment()->Drop(1);
+          }
+        } else {
+          UNREACHABLE();
+        }
+        return;
+      } else {
+        call = PreProcessCall(new(zone()) HInvokeFunction(context,
+                                                          function,
+                                                          argument_count));
+        Drop(1);  // The function.
       }
 
     } else {

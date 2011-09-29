@@ -986,6 +986,10 @@ void BinaryOpStub::GenerateTypeTransitionWithSavedArgs(MacroAssembler* masm) {
 
 
 void BinaryOpStub::Generate(MacroAssembler* masm) {
+  // Explicitly allow generation of nested stubs. It is safe here because
+  // generation code does not use any raw pointers.
+  AllowStubCallsScope allow_stub_calls(masm, true);
+
   switch (operands_type_) {
     case BinaryOpIC::UNINITIALIZED:
       GenerateTypeTransition(masm);
@@ -4245,25 +4249,49 @@ void StackCheckStub::Generate(MacroAssembler* masm) {
 }
 
 
+void CallFunctionStub::FinishCode(Code* code) {
+  code->set_has_function_cache(RecordCallTarget());
+}
+
+
+void CallFunctionStub::Clear(Heap* heap, Address address) {
+  ASSERT(Memory::uint8_at(address + kPointerSize) == Assembler::kTestEaxByte);
+  // 1 ~ size of the test eax opcode.
+  Object* cell = Memory::Object_at(address + kPointerSize + 1);
+  // Low-level because clearing happens during GC.
+  reinterpret_cast<JSGlobalPropertyCell*>(cell)->set_value(
+      RawUninitializedSentinel(heap));
+}
+
+
+Object* CallFunctionStub::GetCachedValue(Address address) {
+  ASSERT(Memory::uint8_at(address + kPointerSize) == Assembler::kTestEaxByte);
+  // 1 ~ size of the test eax opcode.
+  Object* cell = Memory::Object_at(address + kPointerSize + 1);
+  return JSGlobalPropertyCell::cast(cell)->value();
+}
+
+
 void CallFunctionStub::Generate(MacroAssembler* masm) {
+  Isolate* isolate = masm->isolate();
   Label slow, non_function;
 
   // The receiver might implicitly be the global object. This is
   // indicated by passing the hole as the receiver to the call
   // function stub.
   if (ReceiverMightBeImplicit()) {
-    Label call;
+    Label receiver_ok;
     // Get the receiver from the stack.
     // +1 ~ return address
     __ mov(eax, Operand(esp, (argc_ + 1) * kPointerSize));
     // Call as function is indicated with the hole.
-    __ cmp(eax, masm->isolate()->factory()->the_hole_value());
-    __ j(not_equal, &call, Label::kNear);
+    __ cmp(eax, isolate->factory()->the_hole_value());
+    __ j(not_equal, &receiver_ok, Label::kNear);
     // Patch the receiver on the stack with the global receiver object.
     __ mov(ebx, GlobalObjectOperand());
     __ mov(ebx, FieldOperand(ebx, GlobalObject::kGlobalReceiverOffset));
     __ mov(Operand(esp, (argc_ + 1) * kPointerSize), ebx);
-    __ bind(&call);
+    __ bind(&receiver_ok);
   }
 
   // Get the function to call from the stack.
@@ -4276,12 +4304,53 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
   __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
   __ j(not_equal, &slow);
 
+  if (RecordCallTarget()) {
+    // Cache the called function in a global property cell in the
+    // instruction stream after the call.  Cache states are uninitialized,
+    // monomorphic (indicated by a JSFunction), and megamorphic.
+    Label initialize, call;
+    // Load the cache cell address into ebx and the cache state into ecx.
+    __ mov(ebx, Operand(esp, 0));  // Return address.
+    __ mov(ebx, Operand(ebx, 1));  // 1 ~ sizeof 'test eax' opcode in bytes.
+    __ mov(ecx, FieldOperand(ebx, JSGlobalPropertyCell::kValueOffset));
+
+    // A monomorphic cache hit or an already megamorphic state: invoke the
+    // function without changing the state.
+    __ cmp(ecx, Operand(edi));
+    __ j(equal, &call, Label::kNear);
+    __ cmp(Operand(ecx), Immediate(MegamorphicSentinel(isolate)));
+    __ j(equal, &call, Label::kNear);
+
+    // A monomorphic miss (i.e, here the cache is not uninitialized) goes
+    // megamorphic.
+    __ cmp(Operand(ecx), Immediate(UninitializedSentinel(isolate)));
+    __ j(equal, &initialize, Label::kNear);
+    // MegamorphicSentinel is a root so no write-barrier is needed.
+    __ mov(FieldOperand(ebx, JSGlobalPropertyCell::kValueOffset),
+           Immediate(MegamorphicSentinel(isolate)));
+    __ jmp(&call, Label::kNear);
+
+    // An uninitialized cache is patched with the function.
+    __ bind(&initialize);
+    __ mov(FieldOperand(ebx, JSGlobalPropertyCell::kValueOffset), edi);
+    __ mov(ecx, edi);
+    __ RecordWriteField(ebx,
+                        JSGlobalPropertyCell::kValueOffset,
+                        ecx,
+                        edx,
+                        kDontSaveFPRegs,
+                        OMIT_REMEMBERED_SET,  // Cells are rescanned.
+                        OMIT_SMI_CHECK);
+
+    __ bind(&call);
+  }
+
   // Fast-case: Just invoke the function.
   ParameterCount actual(argc_);
 
   if (ReceiverMightBeImplicit()) {
     Label call_as_function;
-    __ cmp(eax, masm->isolate()->factory()->the_hole_value());
+    __ cmp(eax, isolate->factory()->the_hole_value());
     __ j(equal, &call_as_function);
     __ InvokeFunction(edi,
                       actual,
@@ -4298,6 +4367,14 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
 
   // Slow-case: Non-function called.
   __ bind(&slow);
+  if (RecordCallTarget()) {
+    // If there is a call target cache, mark it megamorphic in the
+    // non-function case.
+    __ mov(ebx, Operand(esp, 0));
+    __ mov(ebx, Operand(ebx, 1));
+    __ mov(FieldOperand(ebx, JSGlobalPropertyCell::kValueOffset),
+           Immediate(MegamorphicSentinel(isolate)));
+  }
   // Check for function proxy.
   __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
   __ j(not_equal, &non_function);
@@ -4309,8 +4386,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
   __ SetCallKind(ecx, CALL_AS_FUNCTION);
   __ GetBuiltinEntry(edx, Builtins::CALL_FUNCTION_PROXY);
   {
-    Handle<Code> adaptor =
-      masm->isolate()->builtins()->ArgumentsAdaptorTrampoline();
+    Handle<Code> adaptor = isolate->builtins()->ArgumentsAdaptorTrampoline();
     __ jmp(adaptor, RelocInfo::CODE_TARGET);
   }
 
@@ -4322,8 +4398,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
   __ Set(ebx, Immediate(0));
   __ SetCallKind(ecx, CALL_AS_METHOD);
   __ GetBuiltinEntry(edx, Builtins::CALL_NON_FUNCTION);
-  Handle<Code> adaptor =
-      masm->isolate()->builtins()->ArgumentsAdaptorTrampoline();
+  Handle<Code> adaptor = isolate->builtins()->ArgumentsAdaptorTrampoline();
   __ jmp(adaptor, RelocInfo::CODE_TARGET);
 }
 
@@ -4333,20 +4408,32 @@ bool CEntryStub::NeedsImmovableCode() {
 }
 
 
-bool CEntryStub::CompilingCallsToThisStubIsGCSafe() {
+bool CEntryStub::IsPregenerated() {
   return (!save_doubles_ || ISOLATE->fp_stubs_generated()) &&
           result_size_ == 1;
 }
 
 
 void CodeStub::GenerateStubsAheadOfTime() {
+  CEntryStub::GenerateAheadOfTime();
+  StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime();
+  // It is important that the store buffer overflow stubs are generated first.
+  RecordWriteStub::GenerateFixedRegStubsAheadOfTime();
 }
 
 
 void CodeStub::GenerateFPStubs() {
   CEntryStub save_doubles(1, kSaveFPRegs);
   Handle<Code> code = save_doubles.GetCode();
+  code->set_is_pregenerated(true);
   code->GetIsolate()->set_fp_stubs_generated(true);
+}
+
+
+void CEntryStub::GenerateAheadOfTime() {
+  CEntryStub stub(1, kDontSaveFPRegs);
+  Handle<Code> code = stub.GetCode();
+  code->set_is_pregenerated(true);
 }
 
 
@@ -6593,7 +6680,7 @@ struct AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
   { ebx, eax, edi, EMIT_REMEMBERED_SET },
   // Used in CompileArrayPushCall.
   { ebx, ecx, edx, EMIT_REMEMBERED_SET },
-  // Used in CompileStoreGlobal.
+  // Used in CompileStoreGlobal and CallFunctionStub.
   { ebx, ecx, edx, OMIT_REMEMBERED_SET },
   // Used in StoreStubCompiler::CompileStoreField and
   // KeyedStoreStubCompiler::CompileStoreField via GenerateStoreField.
@@ -6601,7 +6688,7 @@ struct AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
   // GenerateStoreField calls the stub with two different permutations of
   // registers.  This is the second.
   { ebx, ecx, edx, EMIT_REMEMBERED_SET },
-  // StoreIC::GenerateNormal via GenerateDictionaryStore.
+  // StoreIC::GenerateNormal via GenerateDictionaryStore, CompileArrayPushCall
   { ebx, edi, edx, EMIT_REMEMBERED_SET },
   // KeyedStoreIC::GenerateGeneric.
   { ebx, edx, ecx, EMIT_REMEMBERED_SET},
@@ -6612,7 +6699,7 @@ struct AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
 };
 
 
-bool RecordWriteStub::CompilingCallsToThisStubIsGCSafe() {
+bool RecordWriteStub::IsPregenerated() {
   for (AheadOfTimeWriteBarrierStubList* entry = kAheadOfTime;
        !entry->object.is(no_reg);
        entry++) {
@@ -6630,9 +6717,13 @@ bool RecordWriteStub::CompilingCallsToThisStubIsGCSafe() {
 
 void StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime() {
   StoreBufferOverflowStub stub1(kDontSaveFPRegs);
-  stub1.GetCode();
-  StoreBufferOverflowStub stub2(kSaveFPRegs);
-  stub2.GetCode();
+  stub1.GetCode()->set_is_pregenerated(true);
+
+  CpuFeatures::TryForceFeatureScope scope(SSE2);
+  if (CpuFeatures::IsSupported(SSE2)) {
+    StoreBufferOverflowStub stub2(kSaveFPRegs);
+    stub2.GetCode()->set_is_pregenerated(true);
+  }
 }
 
 
@@ -6645,7 +6736,7 @@ void RecordWriteStub::GenerateFixedRegStubsAheadOfTime() {
                          entry->address,
                          entry->action,
                          kDontSaveFPRegs);
-    stub.GetCode();
+    stub.GetCode()->set_is_pregenerated(true);
   }
 }
 

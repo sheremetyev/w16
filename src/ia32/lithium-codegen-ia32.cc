@@ -2073,7 +2073,7 @@ void LCodeGen::DoReturn(LReturn* instr) {
 void LCodeGen::DoLoadGlobalCell(LLoadGlobalCell* instr) {
   Register result = ToRegister(instr->result());
   __ mov(result, Operand::Cell(instr->hydrogen()->cell()));
-  if (instr->hydrogen()->check_hole_value()) {
+  if (instr->hydrogen()->RequiresHoleCheck()) {
     __ cmp(result, factory()->the_hole_value());
     DeoptimizeIf(equal, instr->environment());
   }
@@ -2107,7 +2107,7 @@ void LCodeGen::DoStoreGlobalCell(LStoreGlobalCell* instr) {
   // been deleted from the property dictionary. In that case, we need
   // to update the property details in the property dictionary to mark
   // it as no longer deleted. We deoptimize in that case.
-  if (instr->hydrogen()->check_hole_value()) {
+  if (instr->hydrogen()->RequiresHoleCheck()) {
     __ cmp(FieldOperand(object, offset), factory()->the_hole_value());
     DeoptimizeIf(equal, instr->environment());
   }
@@ -2369,16 +2369,14 @@ void LCodeGen::DoLoadKeyedFastDoubleElement(
     LLoadKeyedFastDoubleElement* instr) {
   XMMRegister result = ToDoubleRegister(instr->result());
 
-  if (instr->hydrogen()->RequiresHoleCheck()) {
-    int offset = FixedDoubleArray::kHeaderSize - kHeapObjectTag +
-        sizeof(kHoleNanLower32);
-    Operand hole_check_operand = BuildFastArrayOperand(
-        instr->elements(), instr->key(),
-        FAST_DOUBLE_ELEMENTS,
-        offset);
-    __ cmp(hole_check_operand, Immediate(kHoleNanUpper32));
-    DeoptimizeIf(equal, instr->environment());
-  }
+  int offset = FixedDoubleArray::kHeaderSize - kHeapObjectTag +
+      sizeof(kHoleNanLower32);
+  Operand hole_check_operand = BuildFastArrayOperand(
+      instr->elements(), instr->key(),
+      FAST_DOUBLE_ELEMENTS,
+      offset);
+  __ cmp(hole_check_operand, Immediate(kHoleNanUpper32));
+  DeoptimizeIf(equal, instr->environment());
 
   Operand double_load_operand = BuildFastArrayOperand(
       instr->elements(), instr->key(), FAST_DOUBLE_ELEMENTS,
@@ -3096,7 +3094,7 @@ void LCodeGen::DoCallFunction(LCallFunction* instr) {
   ASSERT(ToRegister(instr->result()).is(eax));
 
   int arity = instr->arity();
-  CallFunctionStub stub(arity, RECEIVER_MIGHT_BE_IMPLICIT);
+  CallFunctionStub stub(arity, NO_CALL_FUNCTION_FLAGS);
   CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
   __ Drop(1);
 }
@@ -3985,9 +3983,16 @@ void LCodeGen::DoCheckInstanceType(LCheckInstanceType* instr) {
 
 
 void LCodeGen::DoCheckFunction(LCheckFunction* instr) {
-  ASSERT(instr->InputAt(0)->IsRegister());
-  Operand operand = ToOperand(instr->InputAt(0));
-  __ cmp(operand, instr->hydrogen()->target());
+  Handle<JSFunction> target = instr->hydrogen()->target();
+  if (isolate()->heap()->InNewSpace(*target)) {
+    Register reg = ToRegister(instr->value());
+    Handle<JSGlobalPropertyCell> cell =
+        isolate()->factory()->NewJSGlobalPropertyCell(target);
+    __ cmp(reg, Operand::Cell(cell));
+  } else {
+    Operand operand = ToOperand(instr->value());
+    __ cmp(operand, instr->hydrogen()->target());
+  }
   DeoptimizeIf(not_equal, instr->environment());
 }
 

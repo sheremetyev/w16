@@ -27,6 +27,7 @@
 
 #include "v8.h"
 
+#include "code-stubs.h"
 #include "compilation-cache.h"
 #include "deoptimizer.h"
 #include "execution.h"
@@ -842,6 +843,12 @@ class StaticMarkingVisitor : public StaticVisitorBase {
     heap->mark_compact_collector()->MarkObject(cell, mark);
   }
 
+  static inline void VisitEmbeddedPointer(Heap* heap, Code* host, Object** p) {
+    MarkObjectByPointer(heap->mark_compact_collector(),
+                        reinterpret_cast<Object**>(host),
+                        p);
+  }
+
   static inline void VisitCodeTarget(Heap* heap, RelocInfo* rinfo) {
     ASSERT(RelocInfo::IsCodeTarget(rinfo->rmode()));
     Code* target = Code::GetCodeFromTargetAddress(rinfo->target_address());
@@ -851,6 +858,12 @@ class StaticMarkingVisitor : public StaticVisitorBase {
       // marked since they are contained in HEAP->non_monomorphic_cache().
       target = Code::GetCodeFromTargetAddress(rinfo->target_address());
     } else {
+      if (FLAG_cleanup_code_caches_at_gc &&
+          target->kind() == Code::STUB &&
+          target->major_key() == CodeStub::CallFunction &&
+          target->has_function_cache()) {
+        CallFunctionStub::Clear(heap, rinfo->pc());
+      }
       MarkBit code_mark = Marking::MarkBitFrom(target);
       heap->mark_compact_collector()->MarkObject(target, code_mark);
     }
@@ -2353,6 +2366,7 @@ void MarkCompactCollector::MigrateObject(Address dst,
                                          Address src,
                                          int size,
                                          AllocationSpace dest) {
+  HEAP_PROFILE(heap(), ObjectMoveEvent(src, dst));
   if (dest == OLD_POINTER_SPACE || dest == LO_SPACE) {
     Address src_slot = src;
     Address dst_slot = dst;
@@ -2419,6 +2433,10 @@ class PointersUpdatingVisitor: public ObjectVisitor {
 
   void VisitPointers(Object** start, Object** end) {
     for (Object** p = start; p < end; p++) UpdatePointer(p);
+  }
+
+  void VisitEmbeddedPointer(Code* host, Object** p) {
+    UpdatePointer(p);
   }
 
   void VisitCodeTarget(RelocInfo* rinfo) {
@@ -2670,8 +2688,10 @@ void MarkCompactCollector::EvacuatePages() {
         // Without room for expansion evacuation is not guaranteed to succeed.
         // Pessimistically abandon unevacuated pages.
         for (int j = i; j < npages; j++) {
-          evacuation_candidates_[j]->ClearEvacuationCandidate();
-          evacuation_candidates_[j]->SetFlag(Page::RESCAN_ON_EVACUATION);
+          Page* page = evacuation_candidates_[j];
+          slots_buffer_allocator_.DeallocateChain(page->slots_buffer_address());
+          page->ClearEvacuationCandidate();
+          page->SetFlag(Page::RESCAN_ON_EVACUATION);
         }
         return;
       }
@@ -2780,10 +2800,9 @@ enum SkipListRebuildingMode {
 // over it.  Map space is swept precisely, because it is not compacted.
 // Slots in live objects pointing into evacuation candidates are updated
 // if requested.
-template<SkipListRebuildingMode skip_list_mode>
+template<SweepingMode sweeping_mode, SkipListRebuildingMode skip_list_mode>
 static void SweepPrecisely(PagedSpace* space,
                            Page* p,
-                           SweepingMode mode,
                            ObjectVisitor* v) {
   ASSERT(!p->IsEvacuationCandidate() && !p->WasSwept());
   ASSERT_EQ(skip_list_mode == REBUILD_SKIP_LIST,
@@ -2828,7 +2847,7 @@ static void SweepPrecisely(PagedSpace* space,
       ASSERT(Marking::IsBlack(Marking::MarkBitFrom(live_object)));
       Map* map = live_object->map();
       int size = live_object->SizeFromMap(map);
-      if (mode == SWEEP_AND_VISIT_LIVE_OBJECTS) {
+      if (sweeping_mode == SWEEP_AND_VISIT_LIVE_OBJECTS) {
         live_object->IterateBody(map->instance_type(), size, v);
       }
       if ((skip_list_mode == REBUILD_SKIP_LIST) && skip_list != NULL) {
@@ -3014,6 +3033,10 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
     // It's difficult to filter out slots recorded for large objects.
     LargeObjectIterator it(heap_->lo_space());
     for (HeapObject* obj = it.Next(); obj != NULL; obj = it.Next()) {
+      // LargeObjectSpace is not swept yet thus we have to skip
+      // dead objects explicitly.
+      if (!IsMarked(obj)) continue;
+
       Page* p = Page::FromAddress(obj->address());
       if (p->IsFlagSet(Page::RESCAN_ON_EVACUATION)) {
         obj->Iterate(&updating_visitor);
@@ -3056,16 +3079,12 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
           SweepConservatively(space, p);
           break;
         case OLD_POINTER_SPACE:
-          SweepPrecisely<IGNORE_SKIP_LIST>(space,
-                                           p,
-                                           SWEEP_AND_VISIT_LIVE_OBJECTS,
-                                           &updating_visitor);
+          SweepPrecisely<SWEEP_AND_VISIT_LIVE_OBJECTS, IGNORE_SKIP_LIST>(
+              space, p, &updating_visitor);
           break;
         case CODE_SPACE:
-          SweepPrecisely<REBUILD_SKIP_LIST>(space,
-                                            p,
-                                            SWEEP_AND_VISIT_LIVE_OBJECTS,
-                                            &updating_visitor);
+          SweepPrecisely<SWEEP_AND_VISIT_LIVE_OBJECTS, REBUILD_SKIP_LIST>(
+              space, p, &updating_visitor);
           break;
         default:
           UNREACHABLE();
@@ -3605,9 +3624,9 @@ void MarkCompactCollector::SweepSpace(PagedSpace* space,
       }
       case PRECISE: {
         if (space->identity() == CODE_SPACE) {
-          SweepPrecisely<REBUILD_SKIP_LIST>(space, p, SWEEP_ONLY, NULL);
+          SweepPrecisely<SWEEP_ONLY, REBUILD_SKIP_LIST>(space, p, NULL);
         } else {
-          SweepPrecisely<IGNORE_SKIP_LIST>(space, p, SWEEP_ONLY, NULL);
+          SweepPrecisely<SWEEP_ONLY, IGNORE_SKIP_LIST>(space, p, NULL);
         }
         break;
       }

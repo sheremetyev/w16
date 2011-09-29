@@ -796,10 +796,11 @@ void HTypeof::PrintDataTo(StringStream* stream) {
 
 void HChange::PrintDataTo(StringStream* stream) {
   HUnaryOperation::PrintDataTo(stream);
-  stream->Add(" %s to %s", from_.Mnemonic(), to().Mnemonic());
+  stream->Add(" %s to %s", from().Mnemonic(), to().Mnemonic());
 
   if (CanTruncateToInt32()) stream->Add(" truncating-int32");
   if (CheckFlag(kBailoutOnMinusZero)) stream->Add(" -0?");
+  if (CheckFlag(kDeoptimizeOnUndefined)) stream->Add(" deopt-on-undefined");
 }
 
 
@@ -1464,7 +1465,7 @@ void HLoadKeyedFastElement::PrintDataTo(StringStream* stream) {
 }
 
 
-bool HLoadKeyedFastElement::RequiresHoleCheck() const {
+bool HLoadKeyedFastElement::RequiresHoleCheck() {
   for (HUseIterator it(uses()); !it.Done(); it.Advance()) {
     HValue* use = it.value();
     if (!use->IsChange()) return true;
@@ -1478,11 +1479,6 @@ void HLoadKeyedFastDoubleElement::PrintDataTo(StringStream* stream) {
   stream->Add("[");
   key()->PrintNameTo(stream);
   stream->Add("]");
-}
-
-
-bool HLoadKeyedFastDoubleElement::RequiresHoleCheck() const {
-  return true;
 }
 
 
@@ -1639,7 +1635,18 @@ void HStoreKeyedSpecializedArrayElement::PrintDataTo(
 
 void HLoadGlobalCell::PrintDataTo(StringStream* stream) {
   stream->Add("[%p]", *cell());
-  if (check_hole_value()) stream->Add(" (deleteable/read-only)");
+  if (!details_.IsDontDelete()) stream->Add(" (deleteable)");
+  if (details_.IsReadOnly()) stream->Add(" (read-only)");
+}
+
+
+bool HLoadGlobalCell::RequiresHoleCheck() {
+  if (details_.IsDontDelete() && !details_.IsReadOnly()) return false;
+  for (HUseIterator it(uses()); !it.Done(); it.Advance()) {
+    HValue* use = it.value();
+    if (!use->IsChange()) return true;
+  }
+  return false;
 }
 
 
@@ -1651,6 +1658,8 @@ void HLoadGlobalGeneric::PrintDataTo(StringStream* stream) {
 void HStoreGlobalCell::PrintDataTo(StringStream* stream) {
   stream->Add("[%p] = ", *cell());
   value()->PrintNameTo(stream);
+  if (!details_.IsDontDelete()) stream->Add(" (deleteable)");
+  if (details_.IsReadOnly()) stream->Add(" (read-only)");
 }
 
 
