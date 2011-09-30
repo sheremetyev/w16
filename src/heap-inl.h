@@ -112,8 +112,7 @@ MaybeObject* Heap::AllocateAsciiSymbol(Vector<const char> str,
 
   // Allocate string.
   Object* result;
-  { AllocationScope allocation_scope;
-    MaybeObject* maybe_result = (size > MaxObjectSizeInPagedSpace())
+  { MaybeObject* maybe_result = (size > MaxObjectSizeInPagedSpace())
                    ? lo_space_->AllocateRaw(size, NOT_EXECUTABLE)
                    : old_data_space_->AllocateRaw(size);
     if (!maybe_result->ToObject(&result)) return maybe_result;
@@ -146,8 +145,7 @@ MaybeObject* Heap::AllocateTwoByteSymbol(Vector<const uc16> str,
 
   // Allocate string.
   Object* result;
-  { AllocationScope allocation_scope;
-    MaybeObject* maybe_result = (size > MaxObjectSizeInPagedSpace())
+  { MaybeObject* maybe_result = (size > MaxObjectSizeInPagedSpace())
                    ? lo_space_->AllocateRaw(size, NOT_EXECUTABLE)
                    : old_data_space_->AllocateRaw(size);
     if (!maybe_result->ToObject(&result)) return maybe_result;
@@ -196,7 +194,6 @@ MaybeObject* Heap::AllocateRaw(int size_in_bytes,
   isolate_->counters()->objs_since_last_young()->Increment();
 #endif
   MaybeObject* result;
-  AllocationScope allocation_scope;
   if (NEW_SPACE == space) {
     result = new_space_.AllocateRaw(size_in_bytes);
     if (always_allocate() && result->IsFailure()) {
@@ -264,7 +261,6 @@ MaybeObject* Heap::AllocateRawMap() {
   isolate_->counters()->objs_since_last_full()->Increment();
   isolate_->counters()->objs_since_last_young()->Increment();
 #endif
-  AllocationScope allocation_scope;
   MaybeObject* result = map_space_->AllocateRaw(Map::kSize);
   if (result->IsFailure()) old_gen_exhausted_ = true;
 #ifdef DEBUG
@@ -283,7 +279,6 @@ MaybeObject* Heap::AllocateRawCell() {
   isolate_->counters()->objs_since_last_full()->Increment();
   isolate_->counters()->objs_since_last_young()->Increment();
 #endif
-  AllocationScope allocation_scope;
   MaybeObject* result = cell_space_->AllocateRaw(JSGlobalPropertyCell::kSize);
   if (result->IsFailure()) old_gen_exhausted_ = true;
   return result;
@@ -514,6 +509,7 @@ Isolate* Heap::isolate() {
 #define CALL_AND_RETRY(ISOLATE, FUNCTION_CALL, RETURN_VALUE, RETURN_EMPTY)\
   do {                                                                    \
     GC_GREEDY_CHECK();                                                    \
+    AllocationScope allocation_scope;                                     \
     MaybeObject* __maybe_object__ = FUNCTION_CALL;                        \
     Object* __object__ = NULL;                                            \
     if (__maybe_object__->ToObject(&__object__)) RETURN_VALUE;            \
