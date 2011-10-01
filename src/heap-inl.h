@@ -625,8 +625,8 @@ Object* Heap::ToBoolean(bool condition) {
 
 
 void Heap::CompletelyClearInstanceofCache() {
-  set_instanceof_cache_map(the_hole_value());
-  set_instanceof_cache_function(the_hole_value());
+  FOR_ALL_THREADS(set_instanceof_cache_map(thread, the_hole_value()));
+  FOR_ALL_THREADS(set_instanceof_cache_function(thread, the_hole_value()));
 }
 
 

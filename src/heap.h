@@ -1018,6 +1018,9 @@ class Heap {
   type* name() {                                                               \
     return type::cast(thread_roots()[k##camel_name##RootIndex]);               \
   }                                                                            \
+  type* name(int thread_index) {                                               \
+    return type::cast(thread_roots_[thread_index][k##camel_name##RootIndex]);  \
+  }                                                                            \
   type* raw_unchecked_##name() {                                               \
     return reinterpret_cast<type*>(thread_roots()[k##camel_name##RootIndex]);  \
   }
@@ -1543,8 +1546,11 @@ class Heap {
 #undef ROOT_ACCESSOR
 
 #define ROOT_ACCESSOR(type, name, camel_name)                                  \
-  inline void set_##name(type* value) {                                 \
-    thread_roots()[k##camel_name##RootIndex] = value;                                  \
+  inline void set_##name(type* value) {                                        \
+    thread_roots()[k##camel_name##RootIndex] = value;                          \
+  }                                                                            \
+  inline void set_##name(int thread_index, type* value) {                      \
+    thread_roots_[thread_index][k##camel_name##RootIndex] = value;             \
   }
   THREAD_ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR

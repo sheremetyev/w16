@@ -368,7 +368,7 @@ void Heap::ReportStatisticsAfterGC() {
 
 
 void Heap::GarbageCollectionPrologue() {
-  isolate_->transcendental_cache()->Clear();
+  FOR_ALL_THREADS(isolate_->transcendental_cache(thread)->Clear());
   ClearJSFunctionResultCaches();
   gc_count_++;
   unflattened_strings_length_ = 0;
@@ -835,19 +835,19 @@ void Heap::MarkCompact(GCTracer* tracer) {
 void Heap::MarkCompactPrologue() {
   // At any old GC clear the keyed lookup cache to enable collection of unused
   // maps.
-  isolate_->keyed_lookup_cache()->Clear();
-  isolate_->context_slot_cache()->Clear();
-  isolate_->descriptor_lookup_cache()->Clear();
-  StringSplitCache::Clear(string_split_cache());
+  FOR_ALL_THREADS(isolate_->keyed_lookup_cache(thread)->Clear());
+  FOR_ALL_THREADS(isolate_->context_slot_cache(thread)->Clear());
+  FOR_ALL_THREADS(isolate_->descriptor_lookup_cache(thread)->Clear());
+  FOR_ALL_THREADS(StringSplitCache::Clear(string_split_cache(thread)));
 
-  isolate_->compilation_cache()->MarkCompactPrologue();
+  FOR_ALL_THREADS(isolate_->compilation_cache(thread)->MarkCompactPrologue());
 
   CompletelyClearInstanceofCache();
 
   // TODO(1605) select heuristic for flushing NumberString cache with
   // FlushNumberStringCache
   if (FLAG_cleanup_code_caches_at_gc) {
-    polymorphic_code_cache()->set_cache(undefined_value());
+    FOR_ALL_THREADS(polymorphic_code_cache(thread)->set_cache(undefined_value()));
   }
 
   ClearNormalizedMapCaches();
@@ -1006,7 +1006,7 @@ void Heap::Scavenge() {
   LOG(isolate_, ResourceEvent("scavenge", "begin"));
 
   // Clear descriptor cache.
-  isolate_->descriptor_lookup_cache()->Clear();
+  FOR_ALL_THREADS(isolate_->descriptor_lookup_cache(thread)->Clear());
 
   // Used for updating survived_since_last_expansion_ at function end.
   intptr_t survived_watermark = PromotedSpaceSize();
@@ -5050,9 +5050,11 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
   isolate_->debug()->Iterate(v);
-  if (isolate_->deoptimizer_data() != NULL) {
-    isolate_->deoptimizer_data()->Iterate(v);
-  }
+  FOR_ALL_THREADS(
+    if (isolate_->deoptimizer_data(thread) != NULL) {
+      isolate_->deoptimizer_data(thread)->Iterate(v);
+    }
+  );
 #endif
   v->Synchronize("debug");
   FOR_ALL_THREADS(isolate_->compilation_cache(thread)->Iterate(v));

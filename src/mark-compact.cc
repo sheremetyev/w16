@@ -284,7 +284,7 @@ void MarkCompactCollector::CollectGarbage() {
 
   if (!collect_maps_) ReattachInitialMaps();
 
-  heap_->isolate()->inner_pointer_to_code_cache()->Flush();
+  FOR_ALL_THREADS(heap_->isolate()->inner_pointer_to_code_cache(thread)->Flush());
 
   Finish();
 
@@ -545,7 +545,7 @@ void MarkCompactCollector::Finish() {
   // force lazy re-initialization of it. This must be done after the
   // GC, because it relies on the new address of certain old space
   // objects (empty string, illegal builtin).
-  heap()->isolate()->stub_cache()->Clear();
+  FOR_ALL_THREADS(heap()->isolate()->stub_cache(thread)->Clear());
 
   heap()->external_string_table_.CleanUp();
 }
@@ -1428,19 +1428,22 @@ void MarkCompactCollector::PrepareForCodeFlushing() {
 
   // Make sure we are not referencing the code from the stack.
   ASSERT(this == heap()->mark_compact_collector());
-  for (StackFrameIterator it; !it.done(); it.Advance()) {
-    Code* code = it.frame()->unchecked_code();
-    MarkBit code_mark = Marking::MarkBitFrom(code);
-    MarkObject(code, code_mark);
-  }
+  Isolate* isolate = heap()->isolate();
+  FOR_ALL_THREADS(
+    for (StackFrameIterator it(isolate, isolate->thread_local_top(thread)); !it.done(); it.Advance()) {
+      Code* code = it.frame()->unchecked_code();
+      MarkBit code_mark = Marking::MarkBitFrom(code);
+      MarkObject(code, code_mark);
+    }
+  );
 
   // Iterate the archived stacks in all threads to check if
   // the code is referenced.
   // TODO(w16): iterate concurrent threads?
 
   SharedFunctionInfoMarkingVisitor visitor(this);
-  heap()->isolate()->compilation_cache()->IterateFunctions(&visitor);
-  heap()->isolate()->handle_scope_implementer()->Iterate(&visitor);
+  FOR_ALL_THREADS(heap()->isolate()->compilation_cache(thread)->IterateFunctions(&visitor));
+  FOR_ALL_THREADS(heap()->isolate()->handle_scope_implementer(thread)->Iterate(&visitor));
 
   ProcessMarkingDeque();
 }

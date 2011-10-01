@@ -890,12 +890,17 @@ class Isolate {
   STM* stm() { return &stm_; }
   StatsTable* stats_table();
   StubCache* stub_cache() { return thread_local_top()->stub_cache_; }
+  StubCache* stub_cache(int thread_index) { return tops_[thread_index]->stub_cache_; }
   DeoptimizerData* deoptimizer_data() { return thread_local_top()->deoptimizer_data_; }
+  DeoptimizerData* deoptimizer_data(int thread_index) { return tops_[thread_index]->deoptimizer_data_; }
   ThreadLocalTop* thread_local_top() const {
     ThreadLocalTop* top = reinterpret_cast<ThreadLocalTop*>(
         Thread::GetExistingThreadLocal(thread_local_top_key_));
     ASSERT_NOT_NULL(top);
     return top;
+  }
+  ThreadLocalTop* thread_local_top(int thread_index) const {
+    return tops_[thread_index];
   }
 
   Transaction* get_transaction() const { return thread_local_top()->transaction_; }
@@ -903,6 +908,9 @@ class Isolate {
 
   TranscendentalCache* transcendental_cache() const {
     return thread_local_top()->transcendental_cache_;
+  }
+  TranscendentalCache* transcendental_cache(int thread_index) const {
+    return tops_[thread_index]->transcendental_cache_;
   }
 
   MemoryAllocator* memory_allocator() {
@@ -912,13 +920,22 @@ class Isolate {
   KeyedLookupCache* keyed_lookup_cache() {
     return thread_local_top()->keyed_lookup_cache_;
   }
+  KeyedLookupCache* keyed_lookup_cache(int thread_index) {
+    return tops_[thread_index]->keyed_lookup_cache_;
+  }
 
   ContextSlotCache* context_slot_cache() {
     return thread_local_top()->context_slot_cache_;
   }
+  ContextSlotCache* context_slot_cache(int thread_index) {
+    return tops_[thread_index]->context_slot_cache_;
+  }
 
   DescriptorLookupCache* descriptor_lookup_cache() {
     return thread_local_top()->descriptor_lookup_cache_;
+  }
+  DescriptorLookupCache* descriptor_lookup_cache(int thread_index) {
+    return tops_[thread_index]->descriptor_lookup_cache_;
   }
 
   v8::ImplementationUtilities::HandleScopeData* handle_scope_data() {
@@ -943,6 +960,9 @@ class Isolate {
 
   InnerPointerToCodeCache* inner_pointer_to_code_cache() {
     return thread_local_top()->inner_pointer_to_code_cache_;
+  }
+  InnerPointerToCodeCache* inner_pointer_to_code_cache(int thread_index) {
+    return tops_[thread_index]->inner_pointer_to_code_cache_;
   }
 
   StringInputBuffer* write_input_buffer() { return thread_local_top()->write_input_buffer_; }

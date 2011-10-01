@@ -1110,6 +1110,8 @@ void StubCache::Clear() {
   Code* empty = isolate_->builtins()->builtin(Builtins::kIllegal);
   for (int i = 0; i < kPrimaryTableSize; i++) {
     Code* code = primary_[i].value;
+    // TODO(w16): change stub_cache initialization order?
+    if (code == NULL) continue;
     if (code != empty && !code->is_pregenerated()) {
       primary_[i].key = heap()->empty_string();
       primary_[i].value = empty;
@@ -1117,6 +1119,8 @@ void StubCache::Clear() {
   }
   for (int j = 0; j < kSecondaryTableSize; j++) {
     Code* code = secondary_[j].value;
+    // TODO(w16): change stub_cache initialization order?
+    if (code == NULL) continue;
     if (code != empty && !code->is_pregenerated()) {
       secondary_[j].key = heap()->empty_string();
       secondary_[j].value = empty;

@@ -464,7 +464,7 @@ void IncrementalMarking::StartMarking() {
 #endif
 
   heap_->CompletelyClearInstanceofCache();
-  heap_->isolate()->compilation_cache()->MarkCompactPrologue();
+  FOR_ALL_THREADS(heap_->isolate()->compilation_cache(thread)->MarkCompactPrologue());
 
   if (FLAG_cleanup_code_caches_at_gc) {
     // We will mark cache black with a separate pass
