@@ -3620,14 +3620,14 @@ void SharedFunctionInfo::set_code(Code* value, WriteBarrierMode mode) {
 
   if (!old_is_lazy || id != Builtins::kNotBuiltin) {
     // replace other threads' code
-    for (int i = 0; i < MAX_THREADS; i++) {
+    FOR_ALL_THREADS(
       Code* others_code = (id == Builtins::kNotBuiltin) ?
-        Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile, i) :
-        Isolate::Current()->builtins()->builtin(id, i);
+        Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile, thread) :
+        Isolate::Current()->builtins()->builtin(id, thread);
       ASSERT(others_code->IsCode());
-      WRITE_FIELD(this, CodeOffset(i), others_code);
-      CONDITIONAL_WRITE_BARRIER(value->GetHeap(), this, CodeOffset(i), others_code, mode);
-    }
+      WRITE_FIELD(this, CodeOffset(thread), others_code);
+      CONDITIONAL_WRITE_BARRIER(value->GetHeap(), this, CodeOffset(thread), others_code, mode);
+    );
   }
 
   WRITE_FIELD(this, CodeOffset(), value);
@@ -3647,13 +3647,13 @@ void SharedFunctionInfo::set_construct_stub(Code* value, WriteBarrierMode mode) 
   ASSERT(id != Builtins::kNotBuiltin);
   if (id != Builtins::kNotBuiltin) {
     // replace other threads' code
-    for (int i = 0; i < MAX_THREADS; i++) {
-      Code* others_code = builtins->builtin(id, i);
+    FOR_ALL_THREADS(
+      Code* others_code = builtins->builtin(id, thread);
       ASSERT(others_code->IsCode());
-      int offset = ConstructStubOffset(i);
+      int offset = ConstructStubOffset(thread);
       WRITE_FIELD(this, offset, others_code);
       CONDITIONAL_WRITE_BARRIER(HEAP, this, offset, others_code, mode);
-    }
+    );
   }
 
   int offset = ConstructStubOffset();
@@ -3780,18 +3780,18 @@ void JSFunction::set_code(Code* value) {
 
   if (!old_is_lazy || id != Builtins::kNotBuiltin) {
     // replace other threads' code
-    for (int i = 0; i < MAX_THREADS; i++) {
+    FOR_ALL_THREADS(
       Code* others_code = (id == Builtins::kNotBuiltin) ?
-        Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile, i) :
-        Isolate::Current()->builtins()->builtin(id, i);
+        Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile, thread) :
+        Isolate::Current()->builtins()->builtin(id, thread);
       ASSERT(others_code->IsCode());
       byte* others_entry = others_code->entry();
-      WRITE_INTPTR_FIELD(this, CodeEntryOffset(i), reinterpret_cast<intptr_t>(others_entry));
+      WRITE_INTPTR_FIELD(this, CodeEntryOffset(thread), reinterpret_cast<intptr_t>(others_entry));
       GetHeap()->incremental_marking()->RecordWriteOfCodeEntry(
           this,
-          HeapObject::RawField(this, CodeEntryOffset(i)),
+          HeapObject::RawField(this, CodeEntryOffset(thread)),
           others_code);
-    }
+    );
   }
 
 

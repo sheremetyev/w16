@@ -1557,9 +1557,7 @@ static void Generate_FrameDropper_LiveEdit(MacroAssembler* masm) {
 
 
 Builtins::Builtins() {
-  for (int i = 0; i < MAX_THREADS; i++) {
-    initialized_[i] = false;
-  }
+  FOR_ALL_THREADS(initialized_[thread] = false);
   memset(builtins_, 0, sizeof(builtins_[0]) * builtin_count);
   memset(names_, 0, sizeof(names_[0]) * builtin_count);
 }
@@ -1735,9 +1733,7 @@ int Builtins::ThreadIndex() {
 }
 
 void Builtins::TearDown() {
-  for (int i = 0; i < MAX_THREADS; i++) {
-    initialized_[i] = false;
-  }
+  FOR_ALL_THREADS(initialized_[thread] = false);
 }
 
 
@@ -1750,14 +1746,14 @@ void Builtins::IterateBuiltins(ObjectVisitor* v) {
 
 const char* Builtins::Lookup(byte* pc) {
   // may be called during initialization (disassembler!)
-  for (int j = 0; j < MAX_THREADS; j++) if (initialized_[j]) {
+  FOR_ALL_THREADS( if (initialized_[thread]) {
     for (int i = 0; i < builtin_count; i++) {
-      Code* entry = Code::cast(builtins_[i][j]);
+      Code* entry = Code::cast(builtins_[i][thread]);
       if (entry->contains(pc)) {
         return names_[i];
       }
     }
-  }
+  });
   return NULL;
 }
 

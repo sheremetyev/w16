@@ -626,12 +626,12 @@ class CodeFlusher {
 
       // We are in the middle of a GC cycle so the write barrier in the code
       // setter did not record the slot update and we have to do that manually.
-      for (int i = 0; i < MAX_THREADS; i++) {
-        Address slot = candidate->address() + JSFunction::CodeEntryOffset(i);
+      FOR_ALL_THREADS(
+        Address slot = candidate->address() + JSFunction::CodeEntryOffset(thread);
         Code* target = Code::cast(Code::GetObjectFromEntryAddress(slot));
         isolate_->heap()->mark_compact_collector()->
             RecordCodeEntrySlot(slot, target);
-      }
+      );
 
       candidate = next_candidate;
     }
@@ -1290,9 +1290,7 @@ class StaticMarkingVisitor : public StaticVisitorBase {
                   HeapObject::RawField(object, JSFunction::kCodeEntryOffsetStart));
 
     if (!flush_code_candidate) {
-      for (int i = 0; i < MAX_THREADS; i++) {
-        VisitCodeEntry(heap, object->address() + JSFunction::CodeEntryOffset(i));
-      }
+      FOR_ALL_THREADS(VisitCodeEntry(heap, object->address() + JSFunction::CodeEntryOffset(thread)));
     } else {
       // Don't visit code object.
 
@@ -1343,9 +1341,7 @@ class StaticMarkingVisitor : public StaticVisitorBase {
     VisitPointer(heap, SLOT_ADDR(object, SharedFunctionInfo::kNameOffset));
 
     if (!flush_code_candidate) {
-      for (int i = 0; i < MAX_THREADS; i++) {
-        VisitPointer(heap, SLOT_ADDR(object, SharedFunctionInfo::CodeOffset(i)));
-      }
+      FOR_ALL_THREADS(VisitPointer(heap, SLOT_ADDR(object, SharedFunctionInfo::CodeOffset(thread))));
     }
 
     VisitPointers(heap,
@@ -2391,8 +2387,8 @@ void MarkCompactCollector::MigrateObject(Address dst,
     }
 
     if (compacting_ && HeapObject::FromAddress(dst)->IsJSFunction()) {
-      for (int i = 0; i < MAX_THREADS; i++) {
-        Address code_entry_slot = dst + JSFunction::CodeEntryOffset(i);
+      FOR_ALL_THREADS(
+        Address code_entry_slot = dst + JSFunction::CodeEntryOffset(thread);
         Address code_entry = Memory::Address_at(code_entry_slot);
 
         if (Page::FromAddress(code_entry)->IsEvacuationCandidate()) {
@@ -2402,7 +2398,7 @@ void MarkCompactCollector::MigrateObject(Address dst,
                              code_entry_slot,
                              SlotsBuffer::IGNORE_OVERFLOW);
         }
-      }
+      );
     }
   } else if (dest == CODE_SPACE) {
     PROFILE(heap()->isolate(), CodeMoveEvent(src, dst));

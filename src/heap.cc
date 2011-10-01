@@ -145,9 +145,7 @@ Heap::Heap()
       last_empty_page_was_given_back_to_the_os_(false),
       chunks_queued_for_free_(NULL) {
 #ifdef DEBUG
-  for (int i = 0; i < MAX_THREADS; i++) {
-      allocation_allowed__[i] = true;
-  }
+  FOR_ALL_THREADS(allocation_allowed__[thread] = true);
 #endif
 
   // Allow build-time customization of the max semispace size. Building
@@ -1513,13 +1511,13 @@ class ScavengingVisitor : public StaticVisitorBase {
       // We should explicitly record code entry slot for compaction because
       // promotion queue processing (IterateAndMarkPointersToFromSpace) will
       // miss it as it is not HeapObject-tagged.
-      for (int i = 0; i < MAX_THREADS; i++) {
+      FOR_ALL_THREADS(
         Address code_entry_slot =
-            target->address() + JSFunction::CodeEntryOffset(i);
+            target->address() + JSFunction::CodeEntryOffset(thread);
         Code* code = Code::cast(Code::GetObjectFromEntryAddress(code_entry_slot));
         map->GetHeap()->mark_compact_collector()->
             RecordCodeEntrySlot(code_entry_slot, code);
-      }
+      );
     }
   }
 
@@ -5037,9 +5035,7 @@ void Heap::IterateWeakRoots(ObjectVisitor* v, VisitMode mode) {
 
 void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   v->VisitPointers(&roots_[0], &roots_[kStrongRootListLength]);
-  for (int i = 0; i < MAX_THREADS; i++) {
-    v->VisitPointers(&thread_roots_[i][0], &thread_roots_[i][kThreadRootListLength]);
-  }
+  FOR_ALL_THREADS(v->VisitPointers(&thread_roots_[thread][0], &thread_roots_[thread][kThreadRootListLength]));
   v->Synchronize("strong_root_list");
 
   v->VisitPointer(BitCast<Object**>(&hidden_symbol_));
@@ -5059,16 +5055,12 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   }
 #endif
   v->Synchronize("debug");
-  for (int i = 0; i < MAX_THREADS; i++) {
-    isolate_->compilation_cache(i)->Iterate(v);
-  }
+  FOR_ALL_THREADS(isolate_->compilation_cache(thread)->Iterate(v));
   v->Synchronize("compilationcache");
 
   // Iterate over local handles in handle scopes.
-  for (int i = 0; i < MAX_THREADS; i++) {
-    isolate_->handle_scope_implementer(i)->Iterate(v,
-      isolate_->handle_scope_data(i));
-  }
+  FOR_ALL_THREADS(isolate_->handle_scope_implementer(thread)->Iterate(v,
+      isolate_->handle_scope_data(thread)));
   v->Synchronize("handlescope");
 
   // Iterate over the builtin code objects and code stubs in the

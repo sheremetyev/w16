@@ -215,6 +215,10 @@ typedef byte* Address;
 
 const int MAX_THREADS = 8; // for STM
 
+#define FOR_ALL_THREADS(CODE)                                                  \
+  for (int thread = 0; thread < MAX_THREADS; thread++) { CODE; }
+
+
 const int KB = 1024;
 const int MB = KB * KB;
 const int GB = KB * KB * KB;

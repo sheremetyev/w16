@@ -1989,11 +1989,9 @@ void V8HeapExplorer::ExtractReferences(HeapObject* obj) {
     SetInternalReference(obj, entry,
                          "name", shared->name(),
                          SharedFunctionInfo::kNameOffset);
-    for (int i = 0; i < MAX_THREADS; i++) {
-      SetInternalReference(obj, entry,
-                           "code", shared->unchecked_code(),
-                           SharedFunctionInfo::CodeOffset(i));
-    }
+    FOR_ALL_THREADS(SetInternalReference(obj, entry,
+                         "code", shared->unchecked_code(),
+                         SharedFunctionInfo::CodeOffset(thread)));
     TagObject(shared->scope_info(), "(function scope info)");
     SetInternalReference(obj, entry,
                          "scope_info", shared->scope_info(),

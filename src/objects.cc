@@ -5802,9 +5802,7 @@ void Relocatable::PostGarbageCollectionProcessing() {
 
 void Relocatable::Iterate(ObjectVisitor* v) {
   Isolate* isolate = Isolate::Current();
-  for (int i = 0; i < MAX_THREADS; i++) {
-    Iterate(v, isolate->relocatable_top(i));
-  }
+  FOR_ALL_THREADS(Iterate(v, isolate->relocatable_top(thread)));
 }
 
 
@@ -6659,9 +6657,7 @@ void JSFunction::JSFunctionIterateBody(int object_size, ObjectVisitor* v) {
   // Iterate over all fields in the body but take care in dealing with
   // the code entry.
   IteratePointers(v, kPropertiesOffset, kCodeEntryOffsetStart);
-  for (int i = 0; i < MAX_THREADS; i++) {
-    v->VisitCodeEntry(this->address() + CodeEntryOffset(i));
-  }
+  FOR_ALL_THREADS(v->VisitCodeEntry(this->address() + CodeEntryOffset(thread)));
   IteratePointers(v, kCodeEntryOffsetEnd, object_size);
 }
 

@@ -546,9 +546,7 @@ void Isolate::Iterate(ObjectVisitor* v, ThreadLocalTop* thread) {
 
 
 void Isolate::Iterate(ObjectVisitor* v) {
-  for (int i = 0; i < MAX_THREADS; i++) {
-    Iterate(v, tops_[i]);
-  }
+  FOR_ALL_THREADS(Iterate(v, tops_[thread]));
 }
 
 
@@ -1421,16 +1419,16 @@ Isolate::Isolate()
 }
 
 void Isolate::InitializeThreads() {
-  for (int i = 0; i < MAX_THREADS; i++) {
-    tops_[i] = new ThreadLocalTop();
-    tops_[i]->Initialize(this);
+  FOR_ALL_THREADS(
+    tops_[thread] = new ThreadLocalTop();
+    tops_[thread]->Initialize(this);
     // copied from InitializeThreadLocal()
-    tops_[i]->pending_exception_ = heap_.the_hole_value();
-    tops_[i]->has_pending_message_ = false;
-    tops_[i]->pending_message_obj_ = heap_.the_hole_value();
-    tops_[i]->pending_message_script_ = NULL;
-    tops_[i]->scheduled_exception_ = heap_.the_hole_value();
-  }
+    tops_[thread]->pending_exception_ = heap_.the_hole_value();
+    tops_[thread]->has_pending_message_ = false;
+    tops_[thread]->pending_message_obj_ = heap_.the_hole_value();
+    tops_[thread]->pending_message_script_ = NULL;
+    tops_[thread]->scheduled_exception_ = heap_.the_hole_value();
+  );
 }
 
 void Isolate::TearDown() {
@@ -1495,9 +1493,7 @@ void Isolate::SetIsolateThreadLocals(Isolate* isolate) {
 Isolate::~Isolate() {
   TRACE_ISOLATE(destructor);
 
-  for (int i = 0; i < MAX_THREADS; i++) {
-    delete tops_[i];
-  }
+  FOR_ALL_THREADS(delete tops_[thread]);
 
   delete stats_table_;
   stats_table_ = NULL;
@@ -1631,14 +1627,14 @@ bool Isolate::Init(Deserializer* des) {
 
   { int current_thread = Thread::GetThreadLocalInt(thread_id_key_);
     void* current_top = Thread::GetThreadLocal(thread_local_top_key_);
-    for (int i = 0; i < MAX_THREADS; i++) {
-      Thread::SetThreadLocalInt(thread_id_key_, i + 1);
-      Thread::SetThreadLocal(thread_local_top_key_, tops_[i]);
+    FOR_ALL_THREADS(
+      Thread::SetThreadLocalInt(thread_id_key_, thread + 1);
+      Thread::SetThreadLocal(thread_local_top_key_, tops_[thread]);
       if (!heap_.ThreadSetup()) {
         V8::SetFatalError();
         return false;
       }
-    }
+    );
     Thread::SetThreadLocalInt(thread_id_key_, current_thread);
     Thread::SetThreadLocal(thread_local_top_key_, current_top);
   }
@@ -1648,11 +1644,11 @@ bool Isolate::Init(Deserializer* des) {
   // initialize Builtins for all threads
   int current_thread = Thread::GetThreadLocalInt(thread_id_key_);
   void* current_top = Thread::GetThreadLocal(thread_local_top_key_);
-  for (int i = 0; i < MAX_THREADS; i++) {
-    Thread::SetThreadLocalInt(thread_id_key_, i + 1);
-    Thread::SetThreadLocal(thread_local_top_key_, tops_[i]);
+  FOR_ALL_THREADS(
+    Thread::SetThreadLocalInt(thread_id_key_, thread + 1);
+    Thread::SetThreadLocal(thread_local_top_key_, tops_[thread]);
     builtins_.Setup(create_heap_objects);
-  }
+  );
   Thread::SetThreadLocalInt(thread_id_key_, current_thread);
   Thread::SetThreadLocal(thread_local_top_key_, current_top);
 
