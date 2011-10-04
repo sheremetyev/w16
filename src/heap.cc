@@ -2328,15 +2328,6 @@ bool Heap::CreateInitialObjects() {
   }
   set_intrinsic_function_names(StringDictionary::cast(obj));
 
-  if (InitializeStringLocks()->IsFailure()) return false;
-
-  // Allocate cache for single character ASCII strings.
-  { MaybeObject* maybe_obj =
-        AllocateFixedArray(String::kMaxAsciiCharCode + 1, TENURED);
-    if (!maybe_obj->ToObject(&obj)) return false;
-  }
-  set_single_character_string_cache(FixedArray::cast(obj));
-
   // Allocate cache for external strings pointing to native source code.
   { MaybeObject* maybe_obj = AllocateFixedArray(Natives::GetBuiltinsCount());
     if (!maybe_obj->ToObject(&obj)) return false;
@@ -5533,6 +5524,13 @@ bool Heap::ThreadSetup() {
   }
   set_polymorphic_code_cache(PolymorphicCodeCache::cast(obj));
 
+  // Allocate cache for single character ASCII strings.
+  { MaybeObject* maybe_obj =
+        AllocateFixedArray(String::kMaxAsciiCharCode + 1, TENURED);
+    if (!maybe_obj->ToObject(&obj)) return false;
+  }
+  set_single_character_string_cache(FixedArray::cast(obj));
+
   // Allocate cache for string split.
   { MaybeObject* maybe_obj =
         AllocateFixedArray(StringSplitCache::kStringSplitCacheSize, TENURED);
@@ -5547,6 +5545,7 @@ bool Heap::ThreadSetup() {
   CreateFixedStubs();
 
   if (InitializeNumberStringCache()->IsFailure()) return false;
+  if (InitializeStringLocks()->IsFailure()) return false;
 
   // Initialize keyed lookup cache.
   isolate_->keyed_lookup_cache()->Clear();
