@@ -131,7 +131,7 @@ Handle<Code> CodeStub::GetCode() {
     code = *new_object;
     Activate(code);
   } else {
-    ASSERT(IsPregenerated() == code->is_pregenerated());
+    CHECK(IsPregenerated() == code->is_pregenerated());
   }
 
   ASSERT(!NeedsImmovableCode() || heap->lo_space()->Contains(code));
@@ -192,6 +192,11 @@ const char* CodeStub::MajorName(CodeStub::Major major_key,
       }
       return NULL;
   }
+}
+
+
+void CodeStub::PrintName(StringStream* stream) {
+  stream->Add("%s", MajorName(MajorKey(), false));
 }
 
 

@@ -139,10 +139,8 @@ class CodeStub BASE_EMBEDDED {
 
   bool CompilingCallsToThisStubIsGCSafe() {
     bool is_pregenerated = IsPregenerated();
-#ifdef DEBUG
     Code* code = NULL;
-    ASSERT(!is_pregenerated || FindCodeInCache(&code));
-#endif
+    CHECK(!is_pregenerated || FindCodeInCache(&code));
     return is_pregenerated;
   }
 
@@ -204,9 +202,7 @@ class CodeStub BASE_EMBEDDED {
 
   // Returns a name for logging/debugging purposes.
   SmartArrayPointer<const char> GetName();
-  virtual void PrintName(StringStream* stream) {
-    stream->Add("%s", MajorName(MajorKey(), false));
-  }
+  virtual void PrintName(StringStream* stream);
 
   // Returns whether the code generated for this stub needs to be allocated as
   // a fixed (non-moveable) code object.
