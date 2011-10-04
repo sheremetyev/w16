@@ -366,7 +366,8 @@ void IncrementalMarking::ActivateGeneratedStub(Code* stub) {
 
 static void PatchIncrementalMarkingRecordWriteStubs(
     Heap* heap, RecordWriteStub::Mode mode) {
-  NumberDictionary* stubs = heap->code_stubs();
+  FOR_ALL_THREADS(
+  NumberDictionary* stubs = heap->code_stubs(thread);
 
   int capacity = stubs->Capacity();
   for (int i = 0; i < capacity; i++) {
@@ -383,6 +384,7 @@ static void PatchIncrementalMarkingRecordWriteStubs(
       }
     }
   }
+  );
 }
 
 
@@ -469,7 +471,7 @@ void IncrementalMarking::StartMarking() {
   if (FLAG_cleanup_code_caches_at_gc) {
     // We will mark cache black with a separate pass
     // when we finish marking.
-    MarkObjectGreyDoNotEnqueue(heap_->polymorphic_code_cache());
+    FOR_ALL_THREADS(MarkObjectGreyDoNotEnqueue(heap_->polymorphic_code_cache(thread)));
   }
 
   // Mark strong roots grey.
@@ -593,10 +595,12 @@ void IncrementalMarking::Hurry() {
   }
 
   if (FLAG_cleanup_code_caches_at_gc) {
-    PolymorphicCodeCache* poly_cache = heap_->polymorphic_code_cache();
+    FOR_ALL_THREADS(
+    PolymorphicCodeCache* poly_cache = heap_->polymorphic_code_cache(thread);
     Marking::GreyToBlack(Marking::MarkBitFrom(poly_cache));
     MemoryChunk::IncrementLiveBytes(poly_cache->address(),
                                     PolymorphicCodeCache::kSize);
+    );
   }
 
   Object* context = heap_->global_contexts_list();
