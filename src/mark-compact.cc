@@ -624,10 +624,10 @@ class CodeFlusher {
       // We are in the middle of a GC cycle so the write barrier in the code
       // setter did not record the slot update and we have to do that manually.
       FOR_ALL_THREADS(
-        Address slot = candidate->address() + JSFunction::CodeEntryOffset(thread);
-        Code* target = Code::cast(Code::GetObjectFromEntryAddress(slot));
-        isolate_->heap()->mark_compact_collector()->
-            RecordCodeEntrySlot(slot, target);
+      Address slot = candidate->address() + JSFunction::CodeEntryOffset(thread);
+      Code* target = Code::cast(Code::GetObjectFromEntryAddress(slot));
+      isolate_->heap()->mark_compact_collector()->
+          RecordCodeEntrySlot(slot, target);
       );
 
       candidate = next_candidate;
@@ -1429,11 +1429,11 @@ void MarkCompactCollector::PrepareForCodeFlushing() {
   ASSERT(this == heap()->mark_compact_collector());
   Isolate* isolate = heap()->isolate();
   FOR_ALL_THREADS(
-    for (StackFrameIterator it(isolate, isolate->thread_local_top(thread)); !it.done(); it.Advance()) {
-      Code* code = it.frame()->unchecked_code();
-      MarkBit code_mark = Marking::MarkBitFrom(code);
-      MarkObject(code, code_mark);
-    }
+  for (StackFrameIterator it(isolate, isolate->thread_local_top(thread)); !it.done(); it.Advance()) {
+    Code* code = it.frame()->unchecked_code();
+    MarkBit code_mark = Marking::MarkBitFrom(code);
+    MarkObject(code, code_mark);
+  }
   );
 
   // Iterate the archived stacks in all threads to check if
@@ -2390,16 +2390,16 @@ void MarkCompactCollector::MigrateObject(Address dst,
 
     if (compacting_ && HeapObject::FromAddress(dst)->IsJSFunction()) {
       FOR_ALL_THREADS(
-        Address code_entry_slot = dst + JSFunction::CodeEntryOffset(thread);
-        Address code_entry = Memory::Address_at(code_entry_slot);
+      Address code_entry_slot = dst + JSFunction::CodeEntryOffset(thread);
+      Address code_entry = Memory::Address_at(code_entry_slot);
 
-        if (Page::FromAddress(code_entry)->IsEvacuationCandidate()) {
-          SlotsBuffer::AddTo(&slots_buffer_allocator_,
-                             &migration_slots_buffer_,
-                             SlotsBuffer::CODE_ENTRY_SLOT,
-                             code_entry_slot,
-                             SlotsBuffer::IGNORE_OVERFLOW);
-        }
+      if (Page::FromAddress(code_entry)->IsEvacuationCandidate()) {
+        SlotsBuffer::AddTo(&slots_buffer_allocator_,
+                            &migration_slots_buffer_,
+                            SlotsBuffer::CODE_ENTRY_SLOT,
+                            code_entry_slot,
+                            SlotsBuffer::IGNORE_OVERFLOW);
+      }
       );
     }
   } else if (dest == CODE_SPACE) {

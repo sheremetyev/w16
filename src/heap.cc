@@ -1509,11 +1509,11 @@ class ScavengingVisitor : public StaticVisitorBase {
       // promotion queue processing (IterateAndMarkPointersToFromSpace) will
       // miss it as it is not HeapObject-tagged.
       FOR_ALL_THREADS(
-        Address code_entry_slot =
-            target->address() + JSFunction::CodeEntryOffset(thread);
-        Code* code = Code::cast(Code::GetObjectFromEntryAddress(code_entry_slot));
-        map->GetHeap()->mark_compact_collector()->
-            RecordCodeEntrySlot(code_entry_slot, code);
+      Address code_entry_slot =
+          target->address() + JSFunction::CodeEntryOffset(thread);
+      Code* code = Code::cast(Code::GetObjectFromEntryAddress(code_entry_slot));
+      map->GetHeap()->mark_compact_collector()->
+          RecordCodeEntrySlot(code_entry_slot, code);
       );
     }
   }
@@ -5039,9 +5039,9 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
 #ifdef ENABLE_DEBUGGER_SUPPORT
   isolate_->debug()->Iterate(v);
   FOR_ALL_THREADS(
-    if (isolate_->deoptimizer_data(thread) != NULL) {
-      isolate_->deoptimizer_data(thread)->Iterate(v);
-    }
+  if (isolate_->deoptimizer_data(thread) != NULL) {
+    isolate_->deoptimizer_data(thread)->Iterate(v);
+  }
   );
 #endif
   v->Synchronize("debug");
