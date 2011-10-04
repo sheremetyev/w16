@@ -1442,7 +1442,7 @@ void MarkCompactCollector::PrepareForCodeFlushing() {
 
   SharedFunctionInfoMarkingVisitor visitor(this);
   FOR_ALL_THREADS(heap()->isolate()->compilation_cache(thread)->IterateFunctions(&visitor));
-  FOR_ALL_THREADS(heap()->isolate()->handle_scope_implementer(thread)->Iterate(&visitor));
+  FOR_ALL_THREADS(heap()->isolate()->handle_scope_implementer(thread)->Iterate(&visitor, heap()->isolate()->handle_scope_data(thread)));
 
   ProcessMarkingDeque();
 }
