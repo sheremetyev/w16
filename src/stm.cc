@@ -168,6 +168,31 @@ class CellMap {
     }
   }
 
+  bool Intersects(const CellMap& other) {
+    Block* block = other.first_block_;
+
+    while (block != NULL && block != *other.last_block_address_) {
+      for (int i = 0; i < BLOCK_SIZE; i++) {
+        CellPair& pair = block->cells_[i];
+        if (GetMapping(pair.from_) != NULL) {
+          return true;
+        }
+      }
+      block = block->next_;
+    }
+
+    if (block != NULL) { // last block
+      for (int i = 0; i < other.index_; i++) {
+        CellPair& pair = block->cells_[i];
+        if (GetMapping(pair.from_) != NULL) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
  private:
   struct CellPair {
     Object* from_;
@@ -227,7 +252,7 @@ class WriteSet {
   }
 
   bool Intersects(const WriteSet& other) {
-    return false;
+    return map_.Intersects(other.map_);
   }
   
  private:
@@ -265,7 +290,7 @@ class ReadSet {
   }
 
   bool Intersects(const WriteSet& other) {
-    return false;
+    return map_.Intersects(other.map_);
   }
 
  private:
