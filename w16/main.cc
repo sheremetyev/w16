@@ -241,7 +241,7 @@ int main(int argc, char **argv) {
   }
 
   // run event loop in main thread too
-  v8::internal::Thread::SetThreadLocal(thread_name_key, "Worker 0");
+  v8::internal::Thread::SetThreadLocal(thread_name_key, (void*)"Worker 0");
   EventLoop(stm);
 
   // stop when all threads are idle and the event queue is empty

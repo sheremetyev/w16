@@ -75,7 +75,6 @@ int ThreadId::GetCurrentThreadId() {
 
 ThreadLocalTop::ThreadLocalTop()
     : compilation_cache_(NULL),
-      transaction_(NULL),
       stub_cache_(NULL),
       deoptimizer_data_(NULL),
       capture_stack_trace_for_uncaught_exceptions_(false),
@@ -90,7 +89,8 @@ ThreadLocalTop::ThreadLocalTop()
       inner_pointer_to_code_cache_(NULL),
       write_input_buffer_(NULL),
       string_tracker_(NULL),
-      regexp_stack_(NULL)
+      regexp_stack_(NULL),
+      transaction_(NULL)
 {
   InitializeInternal();
   // This flag may be set using v8::V8::IgnoreOutOfMemoryException()

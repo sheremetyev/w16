@@ -3620,7 +3620,6 @@ Code* SharedFunctionInfo::unchecked_code() {
 
 void SharedFunctionInfo::set_code(Code* value, WriteBarrierMode mode) {
   Code* lazy_code = Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile);
-  bool new_is_lazy = (lazy_code == value);
   bool old_is_lazy = (lazy_code == unchecked_code());
   Builtins::Name id = Isolate::Current()->builtins()->lookupid(value);
 
@@ -3780,7 +3779,6 @@ Code* JSFunction::unchecked_code() {
 void JSFunction::set_code(Code* value) {
   byte* old_entry = reinterpret_cast<byte*>(READ_INTPTR_FIELD(this, CodeEntryOffset()));
   Code* lazy_code = Isolate::Current()->builtins()->builtin(Builtins::kLazyCompile);
-  bool new_is_lazy = (lazy_code == value);
   bool old_is_lazy = (lazy_code->entry() == old_entry);
   Builtins::Name id = Isolate::Current()->builtins()->lookupid(value);
 
