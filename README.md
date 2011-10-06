@@ -17,8 +17,8 @@ experiment was to show that combination of event-driven programming and STM
 creates a scalable computational model.
 
 We have just one computationally-intensive
-[test](https://github.com/sheremetyev/w16/blob/master/w16/primes.js)
-here. It counts number of primes under 10^6. The counting process is split into
+[test](https://github.com/sheremetyev/w16/blob/master/w16/primes.js).
+It counts number of primes under 10^6. The counting process is split into
 batches and each batch is executed as an event. The number of primes is known so
 we can easily verify the correctness of execution. Splitting the work into
 events gives the parallelization engine an opportunity to distribute load
@@ -58,7 +58,7 @@ There are following modification to V8 engine.
 The [difference](https://github.com/sheremetyev/w16/compare/v8...master) from
 the original V8 source code is kept as small as possible.
 
-The following things are not implemented:
+The following things are not implemented.
 
 - mutual exclusion for external calls from JavaScript to C++ and marking of
   transaction as irrevocable
@@ -68,8 +68,8 @@ The following things are not implemented:
 W16 can be compiled on Windows with Visual Studio 2010 and on Mac OS X with
 Xcode 4.2. Other configurations haven't been tested.
 
-Running Tests
-=============
+Compiling and Testing
+=====================
 
 Windows
 -------
