@@ -30,19 +30,28 @@ Implementation Details
 ======================
 
 There are following modification to V8 engine.
+
 - thread management code is removed
+
 - thread-specific data members are moved from Isolate to ThreadLocalTop
+
 - some parts of the Heap are made thread-local
+
 - functions have a separate version of compiled code for each thread with
   embedded pointers to thread-local instances of data
+
 - shared data is protected by mutexes
+
 - when GC is required all threads are paused and references in all threads are
   traversed
+
 - simplified version of
   [commit-time invalidating STM](http://dl.acm.org/citation.cfm?id=1772970) is
   [implemented](https://github.com/sheremetyev/w16/blob/master/src/stm.cc)
+
 - read and write operations on heap objects are intercepted and redirected via
   STM to a copy of an objects
+
 - [event-driven execution environment](https://github.com/sheremetyev/w16/blob/master/w16/main.cc)
   is implemented
 
@@ -50,8 +59,10 @@ The [difference](https://github.com/sheremetyev/w16/compare/v8...master) from
 the original V8 source code is kept as small as possible.
 
 The following things are not implemented:
+
 - mutual exclusion for external calls from JavaScript to C++ and marking of
   transaction as irrevocable
+
 - deferred execution of asynchronous external calls
 
 W16 can be compiled on Windows with Visual Studio 2010 and on Mac OS X with
@@ -79,4 +90,4 @@ Run the following command to build and execute W16 on Mac OS X in 2 threads.
     w16/build/Debug/w16 w16/primes.js --threads=2
 
 Should you have any problems with W16 please don't hesitate to
-[contact me](sheremetyev@gmail.com).
+[contact me](mailto:sheremetyev@gmail.com).
