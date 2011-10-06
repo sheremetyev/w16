@@ -302,7 +302,10 @@ class Transaction {
   Transaction(Isolate* isolate) :
     aborted_(false),
     isolate_(isolate),
-    mutex_(OS::CreateMutex()) {
+    mutex_(OS::CreateMutex()),
+    gc_mutex_(OS::CreateMutex()),
+    done_gc_(NULL) {
+    gc_mutex_->Lock();
   }
 
   void Iterate(ObjectVisitor* v) {
@@ -405,21 +408,66 @@ class Transaction {
     isolate_->clear_pending_message();
   }
 
+  void LockGC() { gc_mutex_->Lock(); }
+  void UnlockGC() { gc_mutex_->Unlock(); }
+
+  void ResetDoneGC() {
+    ASSERT(done_gc_ == NULL);
+    done_gc_ = OS::CreateSemaphore(0);
+  }
+
+  void WaitDoneGC() {
+    ASSERT_NOT_NULL(done_gc_);
+    done_gc_->Wait();
+    delete done_gc_;
+    done_gc_ = NULL;
+  }
+
+  void SignalDoneGC() {
+    if (done_gc_ != NULL) {
+      done_gc_->Signal();
+    }
+  }
+
  private:
   volatile bool aborted_;
   Isolate* isolate_;
   ReadSet read_set_;
   WriteSet write_set_;
   Mutex* mutex_;
+  Mutex* gc_mutex_;
+  Semaphore* done_gc_;
 };
 
 STM::STM() :
+  need_gc_(0),
   heap_mutex_(OS::CreateMutex()),
   commit_mutex_(OS::CreateMutex()),
   transactions_mutex_(OS::CreateMutex()) {
 }
 
+// we respect the following requirements
+// - all heap modifications (allocs and GCs) should be mutually exclusive
+// - when GC is needed in at least one thread other threads must be stopped in a
+//   safe state (all object pointers are tracked)
+// - when several threads run out of memory at the same time (highly probable
+//   situation) one GC should be enought for all of them
+// - collection scope can be nested into allocation scope (one level only)
+// - need adapt to the number of active transactions
+// - GC is relatively rare event and it shouldn't slow down everything
+//
+// we implement them in the following way
+// - each transaction has a lock that must be acquired before GC
+// - GC thread prevents modification of transactions list via
+//   `transactions_mutex_`
+// - transactions just starting cannot modify heap so we simply block them
+// - committing transactions release GC lock before (possibly) blocking on
+//   `transactions_mutex_`
+// - each thread checks a flag before each allocation and pauses if GC is
+//   required
+
 void STM::EnterAllocationScope() {
+  PauseForGC();
   heap_mutex_->Lock();
 }
 
@@ -427,12 +475,80 @@ void STM::LeaveAllocationScope() {
   heap_mutex_->Unlock();
 }
 
-void STM::EnterCollectionScope() {
-  heap_mutex_->Lock();
+bool STM::EnterCollectionScope() {
+  // signal that we need a GC
+  Atomic32 need_gc_prev_;
+  need_gc_prev_ = NoBarrier_CompareAndSwap(&need_gc_, 0, 1);
+  if (need_gc_prev_ != 0) {
+    // GC is pending in another thread so we simply allow it to proceed
+    PauseForGC();
+    return false;
+  }
+
+  // make sure that transaction list cannot be changed
+  // transactions are either blocked by `transactions_mutex_` or paused for GC
+  transactions_mutex_->Lock();
+
+  // wait for other threads to pause
+  Transaction* current_trans = isolate_->get_transaction();
+  ASSERT_NOT_NULL(current_trans);
+  for (int i = 0; i < transactions_.length(); i++) {
+    Transaction* trans = transactions_[i];
+    if (trans == current_trans) { continue; }
+
+    // if transaction is locked in commit by `transactions_mutex_` then it has
+    // released GC lock already and we are fine, otherwise it will pause for GC
+    // or enter commit eventually
+    // we don't care about newly starting transactions
+    trans->LockGC();
+  }
+
+  // TODO(w16): do we need the barrier here?
+  MemoryBarrier();
+
+  // do GC
+  return true;
 }
 
 void STM::LeaveCollectionScope() {
-  heap_mutex_->Unlock();
+  // enable future GCs
+  Atomic32 need_gc_prev_;
+  need_gc_prev_ = NoBarrier_CompareAndSwap(&need_gc_, 1, 0);
+  ASSERT(need_gc_prev_ == 1);
+
+  // signal other threads to resume
+  Transaction* current_trans = isolate_->get_transaction();
+  ASSERT_NOT_NULL(current_trans);
+  for (int i = 0; i < transactions_.length(); i++) {
+    Transaction* trans = transactions_[i];
+    if (trans == current_trans) { continue; }
+
+    // if transaction is paused for GC then we'll release it by SignalDoneGC
+    // if it was blocked by `transactions_mutex_` then we allow it to proceed
+    // after acquiring `transactions_mutex_` by unlocking GC
+    trans->UnlockGC();
+    trans->SignalDoneGC();
+  }
+
+  // allow transactions list to be modified
+  transactions_mutex_->Unlock();
+}
+
+void STM::PauseForGC() {
+  if (!need_gc_) {
+    return;
+  }
+
+  Transaction* trans = isolate_->get_transaction();
+  ASSERT_NOT_NULL(trans);
+
+  // signal that we paused
+  trans->ResetDoneGC();
+  trans->UnlockGC();
+
+  // wait for GC to complete
+  trans->WaitDoneGC();
+  trans->LockGC();
 }
 
 void STM::Iterate(ObjectVisitor* v) {
@@ -478,8 +594,11 @@ bool STM::CommitTransaction() {
   }
   even = ! even;
 
+  // thread might be blocked here so we need to allow GC to proceed
+  trans->UnlockGC();
   ScopedLock commit_lock(commit_mutex_);
   ScopedLock transactions_lock(transactions_mutex_);
+  trans->LockGC();
 
   bool comitted = false;
 

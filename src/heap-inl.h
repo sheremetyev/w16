@@ -52,8 +52,10 @@ class CollectionScope {
  public:
   explicit CollectionScope();
   ~CollectionScope();
+  bool SkipCollection() { return skip_; }
  private:
   DISALLOW_COPY_AND_ASSIGN(CollectionScope);
+  bool skip_;
 };
 
 
@@ -511,8 +513,8 @@ Isolate* Heap::isolate() {
 
 #define CALL_AND_RETRY(ISOLATE, FUNCTION_CALL, RETURN_VALUE, RETURN_EMPTY)\
   do {                                                                    \
-    GC_GREEDY_CHECK();                                                    \
     AllocationScope allocation_scope;                                     \
+    GC_GREEDY_CHECK();                                                    \
     MaybeObject* __maybe_object__ = FUNCTION_CALL;                        \
     Object* __object__ = NULL;                                            \
     if (__maybe_object__->ToObject(&__object__)) RETURN_VALUE;            \

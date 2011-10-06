@@ -13,7 +13,7 @@ class STM {
   void EnterAllocationScope();
   void LeaveAllocationScope();
 
-  void EnterCollectionScope();
+  bool EnterCollectionScope();
   void LeaveCollectionScope();
 
   void Iterate(ObjectVisitor* v);
@@ -27,7 +27,12 @@ class STM {
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(STM);
 
-  // TODO: specify order of lock acquisition
+  void PauseForGC();
+
+  volatile Atomic32 need_gc_;
+
+  // commit_mutex_ must be acquired before transactions_mutex_
+  // heap_mutex_ is independent from them
   Mutex* heap_mutex_;
   Mutex* commit_mutex_;
   Mutex* transactions_mutex_;

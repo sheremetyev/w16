@@ -467,6 +467,9 @@ void Heap::CollectAllAvailableGarbage() {
 
 bool Heap::CollectGarbage(AllocationSpace space, GarbageCollector collector) {
   CollectionScope collection_scope;
+  if (collection_scope.SkipCollection()) {
+    return true;
+  }
 
   // The VM is in the GC state until exiting this function.
   VMState state(isolate_, GC);
@@ -6464,7 +6467,7 @@ AllocationScope::~AllocationScope() {
 
 
 CollectionScope::CollectionScope() {
-  HEAP->isolate()->stm()->EnterCollectionScope();
+  skip_ = ! HEAP->isolate()->stm()->EnterCollectionScope();
 }
 
 CollectionScope::~CollectionScope() {
