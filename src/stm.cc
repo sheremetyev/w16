@@ -467,15 +467,27 @@ STM::STM() :
 //   required
 
 void STM::EnterAllocationScope() {
+  if (!v8::internal::FLAG_stm) {
+    return;
+  }
+
   PauseForGC();
   heap_mutex_->Lock();
 }
 
 void STM::LeaveAllocationScope() {
+  if (!v8::internal::FLAG_stm) {
+    return;
+  }
+
   heap_mutex_->Unlock();
 }
 
 bool STM::EnterCollectionScope() {
+  if (!v8::internal::FLAG_stm) {
+    return true;
+  }
+
   // signal that we need a GC
   Atomic32 need_gc_prev_;
   need_gc_prev_ = NoBarrier_CompareAndSwap(&need_gc_, 0, 1);
@@ -511,6 +523,10 @@ bool STM::EnterCollectionScope() {
 }
 
 void STM::LeaveCollectionScope() {
+  if (!v8::internal::FLAG_stm) {
+    return;
+  }
+
   // enable future GCs
   Atomic32 need_gc_prev_;
   need_gc_prev_ = NoBarrier_CompareAndSwap(&need_gc_, 1, 0);
