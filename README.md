@@ -93,7 +93,7 @@ The last command should produce the following output.
 Mac OS X
 --------
 
-Run the following command to build and execute W16 on Mac OS X in 2 threads.
+Run the following commands to clone, build and execute W16 on Mac OS X.
 
     git clone git://github.com/sheremetyev/w16.git
     cd w16
