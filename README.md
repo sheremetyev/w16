@@ -25,7 +25,8 @@ we can easily verify the correctness of execution. Splitting the work into
 events gives the parallelization engine an opportunity to distribute load
 between processors.
 
-Tests are reassurring. We have almost linear scalability.
+Tests are reassurring. In my initial experiments it scaled almost linearly on
+an 8-core processor (right now I have access to 2-core machine only).
 
 Implementation Details
 ======================
