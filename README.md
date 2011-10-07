@@ -76,11 +76,19 @@ Compiling and Testing
 Windows
 -------
 
-Run the following command to build and execute W16 on Windows in 2 threads.
+Run the following commands to clone, build and execute W16 on Windows (in 2 threads).
 
+    git clone git://github.com/sheremetyev/w16.git
+    cd w16
+    svn export http://src.chromium.org/svn/trunk/deps/third_party/cygwin@66844 third_party/cygwin
     generate.cmd
     build.cmd
     w16\Debug\w16 w16\primes.js --threads=2
+    
+The last command should produce the following output.
+
+    [Worker 0] 78498 primes.
+    2 threads, 15282 ms, 10 transactions, 0 aborts
 
 Mac OS X
 --------
