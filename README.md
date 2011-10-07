@@ -95,6 +95,8 @@ Mac OS X
 
 Run the following command to build and execute W16 on Mac OS X in 2 threads.
 
+    git clone git://github.com/sheremetyev/w16.git
+    cd w16
     ./generate.sh
     ./build.sh
     w16/build/Debug/w16 w16/primes.js --threads=2
