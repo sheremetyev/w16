@@ -26,7 +26,8 @@ events gives the parallelization engine an opportunity to distribute load
 between processors.
 
 Tests are reassurring. In my initial experiments it scaled almost linearly on
-an 8-core processor (right now I have access to 2-core machine only).
+an 8-core processor. Right now I have access to 2-core machine only. It would
+be great if someone could give it a try on a multicore machine.
 
 Implementation Details
 ======================
