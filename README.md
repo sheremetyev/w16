@@ -7,8 +7,9 @@ programs.
 
 The idea is very simple. Instead of executing all events in one thread we could
 run several threads (one per processor core) with event loops working on a
-common event queue. Conflicting access to data can be detected using Software
-Transactional Memory. Each event is a transaction. If it happens to be involved
+common event queue. Conflicting access to data can be detected using [software
+transactional memory](http://en.wikipedia.org/wiki/Software_transactional_memory).
+Each event is a transaction. If it happens to be involved
 in a conflict the event can be reverted and restarted.
 
 The implementation of W16 is far from being complete. Some of the most effective
@@ -49,8 +50,9 @@ There are following modification to V8 engine.
   [commit-time invalidating STM](http://dl.acm.org/citation.cfm?id=1772970) is
   [implemented](https://github.com/sheremetyev/w16/blob/master/src/stm.cc)
 
-- read and write operations on heap objects are intercepted and redirected via
-  STM to a copy of an objects
+- read and write operations on heap object are intercepted and redirected via
+  STM to a copy of the object; changes are written back to the original object
+  on commit
 
 - [event-driven execution environment](https://github.com/sheremetyev/w16/blob/master/w16/main.cc)
   is implemented
