@@ -20,7 +20,6 @@ d8
 d8_g
 shell
 shell_g
-/build/gyp
 /obj/
 /out/
 /test/es5conform/data/
