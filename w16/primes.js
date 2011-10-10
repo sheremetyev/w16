@@ -41,7 +41,7 @@ function searchPrimes(first, last) {
 
 var FIRST = 2;
 var LAST = 1000000;
-var BATCH = 100000;
+var BATCH = 1000;
 
 for (var i = FIRST; i < LAST; i += BATCH) {
   var first = i;
