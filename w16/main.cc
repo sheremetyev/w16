@@ -9,7 +9,7 @@
 using namespace v8;
 
 v8::internal::Thread::LocalStorageKey thread_name_key =
-  v8::internal::Thread::CreateThreadLocalKey();;
+  v8::internal::Thread::CreateThreadLocalKey();
 
 // reads a file into a v8 string.
 Handle<String> ReadFile(const char* filename) {

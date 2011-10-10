@@ -58,7 +58,6 @@
 #include "v8.h"
 
 #include "platform.h"
-#include "v8threads.h"
 #include "vm-state-inl.h"
 
 
@@ -983,10 +982,6 @@ static void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
   Isolate* isolate = Isolate::UncheckedCurrent();
   if (isolate == NULL || !isolate->IsInitialized() || !isolate->IsInUse()) {
     // We require a fully initialized and entered isolate.
-    return;
-  }
-  if (v8::Locker::IsActive() &&
-      !isolate->thread_manager()->IsLockedByCurrentThread()) {
     return;
   }
 
