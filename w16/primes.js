@@ -10,6 +10,8 @@ function isPrime(n) {
   return 1;
 };
 
+// this object is shared between event
+// we don't use global properties because they are not supported yet
 var counters = {
   processed : 0,
   primes : 0
