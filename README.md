@@ -25,9 +25,13 @@ we can easily verify the correctness of execution. Splitting the work into
 events gives the parallelization engine an opportunity to distribute load
 between processors.
 
-Tests are reassurring. In my initial experiments it scaled almost linearly on
-an 8-core processor. Right now I have access to 2-core machine only. It would
-be great if someone could give it a try on a multicore machine.
+In my experiments (on AWS High-CPU Extra-Large instance with Amazon Linux 64 bit)
+W16 scaled almost linearly. The exection times were as following.
+
+- 1 thread: 24.5 seconds
+- 2 threads: 12.3 seconds
+- 3 threads: 8.5 seconds
+- 4 threads: 6.5 seconds
 
 Implementation Details
 ======================
@@ -102,6 +106,17 @@ Run the following commands to clone, build and execute W16 on Mac OS X.
     ./generate.sh
     ./build.sh
     w16/build/Debug/w16 w16/primes.js --threads=2
+
+Linux
+-----
+
+Run the following commands to clone, build and execute W16 on Linux.
+
+    git clone git://github.com/sheremetyev/w16.git
+    cd w16
+    ./generate.sh
+    make -f Makefile-ia32
+    out/Debug/w16 w16/primes.js --threads=2
 
 Should you have any questions about W16 please don't hesitate to
 [contact me](mailto:sheremetyev@gmail.com).
