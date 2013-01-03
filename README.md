@@ -59,12 +59,11 @@ There are following modification to V8 engine.
 -   when GC is required all threads are paused and references in all threads are
     traversed
 
--   simplified version of  [commit-time invalidating STM][3] is
-    [implemented][4]
+-   simplified version of  [commit-time invalidating STM][3] is [implemented][4]
 
-    [3]: <http://dl.acm.org/citation.cfm?id=1772970>
+[3]: <http://dl.acm.org/citation.cfm?id=1772970>
 
-    [4]: <https://github.com/sheremetyev/w16/blob/master/src/stm.cc>
+[4]: <https://github.com/sheremetyev/w16/blob/master/src/stm.cc>
 
 -   read and write operations on heap object are intercepted and redirected via
     STM to a copy of the object; changes are written back to the original object
@@ -72,12 +71,12 @@ There are following modification to V8 engine.
 
 -   [event-driven execution environment][5]  is implemented
 
-    [5]: <https://github.com/sheremetyev/w16/blob/master/w16/main.cc>
+[5]: <https://github.com/sheremetyev/w16/blob/master/w16/main.cc>
 
 The [difference][6] from the original V8 source code is kept as small as
 possible.
 
-    [6]: <https://github.com/sheremetyev/w16/compare/v8...master>
+[6]: <https://github.com/sheremetyev/w16/compare/v8...master>
 
 The following things are not implemented.
 
