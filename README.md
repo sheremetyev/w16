@@ -142,4 +142,4 @@ out/Debug/w16 w16/primes.js --threads=2
 Should you have any questions about W16 please don’t hesitate to [contact
 me][7].
 
-[7]: <sheremetyev@gmail.com>
+[7]: <mailto:sheremetyev@gmail.com>
