@@ -3,8 +3,10 @@ W16 - Concurrent V8
 
 This is an experiment in automatic parallelization of JavaScript execution. It
 includes modified Google’s V8 and an execution environment for event-driven
-JavaScript programs. The project is based on the work I did for MSc thesis at
-Oxford University.
+JavaScript programs. The project is based on the work I did for [MSc thesis][0]
+at Oxford University.
+
+[0]: <https://raw.github.com/sheremetyev/w16/master/thesis.pdf>
 
 The idea is very simple. Instead of executing all events in one thread we could
 run several threads (one per processor core) with event loops working on a
